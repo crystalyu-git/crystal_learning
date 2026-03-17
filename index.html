@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Crystal Learning - 智慧間隔重複學習系統，高效記憶語言字句">
+    <title>Crystal Learning — 間隔重複學習系統</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;700&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <!-- Animated background particles -->
+    <div class="bg-particles" id="bgParticles"></div>
+
+    <!-- Navigation -->
+    <nav class="navbar" id="navbar">
+        <div class="nav-brand">
+            <div class="brand-icon">
+                <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+                    <path d="M14 2L2 8L14 14L26 8L14 2Z" stroke="url(#grad1)" stroke-width="2" fill="none" />
+                    <path d="M2 20L14 26L26 20" stroke="url(#grad1)" stroke-width="2" fill="none" />
+                    <path d="M2 14L14 20L26 14" stroke="url(#grad1)" stroke-width="2" fill="none" />
+                    <defs>
+                        <linearGradient id="grad1" x1="2" y1="2" x2="26" y2="26">
+                            <stop offset="0%" stop-color="#6366f1" />
+                            <stop offset="100%" stop-color="#a855f7" />
+                        </linearGradient>
+                    </defs>
+                </svg>
+            </div>
+            <span class="brand-text">Crystal Learning</span>
+        </div>
+        <div class="nav-links">
+            <button class="nav-btn active" data-view="dashboard" id="navDashboard">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="7" height="7" rx="1" />
+                    <rect x="14" y="3" width="7" height="7" rx="1" />
+                    <rect x="3" y="14" width="7" height="7" rx="1" />
+                    <rect x="14" y="14" width="7" height="7" rx="1" />
+                </svg>
+                <span>儀表板</span>
+            </button>
+            <button class="nav-btn" data-view="add" id="navAdd">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="12" y1="8" x2="12" y2="16" />
+                    <line x1="8" y1="12" x2="16" y2="12" />
+                </svg>
+                <span>新增字句</span>
+            </button>
+            <button class="nav-btn" data-view="review" id="navReview">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+                    <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+                </svg>
+                <span>複習卡片</span>
+            </button>
+            <button class="nav-btn" data-view="library" id="navLibrary">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+                </svg>
+                <span>字庫</span>
+            </button>
+            <div class="nav-divider"></div>
+
+            <!-- Learning Language Toggle -->
+            <select id="learningLangSelect" class="filter-select lang-toggle" title="切換學習語言">
+                <option value="english">🇺🇸 英文</option>
+                <option value="japanese">🇯🇵 日文</option>
+            </select>
+
+            <button class="nav-btn sync-status-btn" id="syncStatusBtn" title="同步狀態">
+                <span class="sync-dot" id="syncDot"></span>
+                <span class="sync-label" id="syncLabel">未連線</span>
+            </button>
+            <button class="nav-btn" id="settingsBtn" title="設定">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="3" />
+                    <path
+                        d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                </svg>
+            </button>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-content">
+
+        <!-- ==================== DASHBOARD VIEW ==================== -->
+        <section class="view active" id="dashboardView">
+            <div class="view-header">
+                <div>
+                    <h1 class="view-title" id="dashboardTitle">歡迎回來 ✨ - 英文學習</h1>
+                    <p class="view-subtitle">今天也要加油學習哦！</p>
+                </div>
+                <div class="date-display" id="dateDisplay"></div>
+            </div>
+
+            <!-- Stats Cards -->
+            <div class="stats-grid">
+                <div class="stat-card stat-total">
+                    <div class="stat-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+                        </svg>
+                    </div>
+                    <div class="stat-info">
+                        <span class="stat-number" id="statTotal">0</span>
+                        <span class="stat-label">總字句數</span>
+                    </div>
+                </div>
+                <div class="stat-card stat-review">
+                    <div class="stat-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <circle cx="12" cy="12" r="10" />
+                            <polyline points="12 6 12 12 16 14" />
+                        </svg>
+                    </div>
+                    <div class="stat-info">
+                        <span class="stat-number" id="statDue">0</span>
+                        <span class="stat-label">待複習</span>
+                    </div>
+                </div>
+                <div class="stat-card stat-mastered">
+                    <div class="stat-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                            <polyline points="22 4 12 14.01 9 11.01" />
+                        </svg>
+                    </div>
+                    <div class="stat-info">
+                        <span class="stat-number" id="statMastered">0</span>
+                        <span class="stat-label">已熟練</span>
+                    </div>
+                </div>
+                <div class="stat-card stat-streak">
+                    <div class="stat-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                        </svg>
+                    </div>
+                    <div class="stat-info">
+                        <span class="stat-number" id="statStreak">0</span>
+                        <span class="stat-label">連續學習天數</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Actions -->
+            <div class="quick-actions">
+                <button class="quick-action-btn primary" id="quickReview">
+                    <div class="quick-action-icon">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+                            <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+                        </svg>
+                    </div>
+                    <div class="quick-action-text">
+                        <span class="quick-action-title">開始複習</span>
+                        <span class="quick-action-desc" id="reviewCountLabel">沒有待複習的卡片</span>
+                    </div>
+                    <svg class="quick-action-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2">
+                        <polyline points="9 18 15 12 9 6" />
+                    </svg>
+                </button>
+                <button class="quick-action-btn secondary" id="quickAdd">
+                    <div class="quick-action-icon">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <circle cx="12" cy="12" r="10" />
+                            <line x1="12" y1="8" x2="12" y2="16" />
+                            <line x1="8" y1="12" x2="16" y2="12" />
+                        </svg>
+                    </div>
+                    <div class="quick-action-text">
+                        <span class="quick-action-title">新增字句</span>
+                        <span class="quick-action-desc">加入新的學習內容</span>
+                    </div>
+                    <svg class="quick-action-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2">
+                        <polyline points="9 18 15 12 9 6" />
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Upcoming Reviews -->
+            <div class="section-block">
+                <h2 class="section-title">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                        <line x1="16" y1="2" x2="16" y2="6" />
+                        <line x1="8" y1="2" x2="8" y2="6" />
+                        <line x1="3" y1="10" x2="21" y2="10" />
+                    </svg>
+                    複習排程
+                </h2>
+                <div class="schedule-timeline" id="scheduleTimeline">
+                    <div class="empty-state small">
+                        <p>尚無排程，請先新增字句！</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== ADD VIEW ==================== -->
+        <section class="view" id="addView">
+            <div class="view-header">
+                <div>
+                    <h1 class="view-title">新增字句 ➕</h1>
+                    <p class="view-subtitle">加入新的學習內容到字庫</p>
+                </div>
+            </div>
+
+            <div class="form-container">
+                <form id="addForm" class="add-form">
+                    <div class="form-group">
+                        <label for="inputWord" class="form-label">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <polyline points="4 7 4 4 20 4 20 7" />
+                                <line x1="9" y1="20" x2="15" y2="20" />
+                                <line x1="12" y1="4" x2="12" y2="20" />
+                            </svg>
+                            生字 / 字句
+                        </label>
+                        <input type="text" id="inputWord" class="form-input" placeholder="例：Bonjour" required
+                            autocomplete="off">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="inputPronunciation" class="form-label">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                                <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+                            </svg>
+                            發音 / 拼音（選填）
+                        </label>
+                        <input type="text" id="inputPronunciation" class="form-input" placeholder="例：bɔ̃ʒuʁ"
+                            autocomplete="off">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="inputMeaning" class="form-label">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+                                <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+                            </svg>
+                            翻譯 / 意思
+                        </label>
+                        <input type="text" id="inputMeaning" class="form-input" placeholder="例：你好" required
+                            autocomplete="off">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="inputExample" class="form-label">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <line x1="17" y1="10" x2="3" y2="10" />
+                                <line x1="21" y1="6" x2="3" y2="6" />
+                                <line x1="21" y1="14" x2="3" y2="14" />
+                                <line x1="17" y1="18" x2="3" y2="18" />
+                            </svg>
+                            例句（選填）
+                        </label>
+                        <textarea id="inputExample" class="form-input form-textarea"
+                            placeholder="例：Bonjour, comment allez-vous?" rows="3"></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="inputCategory" class="form-label">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path
+                                    d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+                                <line x1="7" y1="7" x2="7.01" y2="7" />
+                            </svg>
+                            分類標籤（選填）
+                        </label>
+                        <input type="text" id="inputCategory" class="form-input" placeholder="例：法語, 日常用語"
+                            autocomplete="off">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="inputLang" class="form-label">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <circle cx="12" cy="12" r="10" />
+                                <line x1="2" y1="12" x2="22" y2="12" />
+                                <path
+                                    d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                            </svg>
+                            發音語言
+                        </label>
+                        <select id="inputLang" class="form-input">
+                            <option value="en-US">English (美式)</option>
+                            <option value="en-GB">English (英式)</option>
+                            <option value="zh-TW">中文（繁體）</option>
+                            <option value="zh-CN">中文（簡體）</option>
+                            <option value="ja-JP">日本語</option>
+                            <option value="ko-KR">한국어</option>
+                            <option value="fr-FR">Français</option>
+                            <option value="de-DE">Deutsch</option>
+                            <option value="es-ES">Español</option>
+                            <option value="it-IT">Italiano</option>
+                            <option value="pt-BR">Português</option>
+                            <option value="th-TH">ภาษาไทย</option>
+                            <option value="vi-VN">Tiếng Việt</option>
+                        </select>
+                    </div>
+
+                    <button type="submit" class="submit-btn" id="submitBtn">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <line x1="12" y1="5" x2="12" y2="19" />
+                            <line x1="5" y1="12" x2="19" y2="12" />
+                        </svg>
+                        加入字庫
+                    </button>
+                </form>
+
+                <!-- Success Toast -->
+                <div class="toast" id="successToast">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                        <polyline points="22 4 12 14.01 9 11.01" />
+                    </svg>
+                    <span id="toastMessage">已成功加入字庫！</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== REVIEW VIEW ==================== -->
+        <section class="view" id="reviewView">
+            <div class="view-header">
+                <div>
+                    <h1 class="view-title" id="reviewTitle">複習卡片 📖 - 英文</h1>
+                    <p class="view-subtitle" id="reviewSubtitle">翻轉卡片查看答案</p>
+                </div>
+                <!-- Review Progress & Options -->
+                <div class="review-header-controls">
+                    <select id="reviewModeSelect" class="filter-select review-mode">
+                        <option value="word-first">預設 (看外文回想中文)</option>
+                        <option value="meaning-first">測驗 (看中文回想外文)</option>
+                    </select>
+                    <div class="review-progress-container">
+                        <span class="review-progress-text" id="reviewProgressText">0 / 0</span>
+                        <div class="review-progress-bar">
+                            <div class="review-progress-fill" id="reviewProgressFill"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Flashcard Area -->
+            <div class="flashcard-area" id="flashcardArea">
+                <div class="empty-state" id="emptyReview">
+                    <div class="empty-icon">🎉</div>
+                    <h3>太棒了！</h3>
+                    <p>目前沒有需要複習的卡片</p>
+                    <button class="quick-action-btn secondary inline" id="emptyAddBtn">
+                        <span>去新增字句</span>
+                    </button>
+                </div>
+
+                <div class="flashcard-container" id="flashcardContainer" style="display:none;">
+                    <div class="flashcard" id="flashcard">
+                        <div class="flashcard-inner" id="flashcardInner">
+                            <div class="flashcard-front">
+                                <div class="card-level-badge" id="cardLevelBadge">Level 1</div>
+                                <div class="card-category" id="cardCategory"></div>
+
+                                <div class="card-word-row" id="frontPrimaryRow">
+                                    <div class="card-word" id="frontPrimaryText"></div>
+                                    <button class="speak-btn" id="frontSpeakBtn" title="播放發音">
+                                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
+                                            stroke="currentColor" stroke-width="2">
+                                            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                                            <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                                            <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+                                        </svg>
+                                    </button>
+                                </div>
+                                <div class="card-pronunciation" id="frontSecondaryText"></div>
+                                <div class="card-hint">點擊翻轉 →</div>
+                            </div>
+                            <div class="flashcard-back">
+                                <div class="card-level-badge back" id="cardLevelBadgeBack">Level 1</div>
+
+                                <div class="card-meaning-row" id="backPrimaryRow">
+                                    <div class="card-meaning" id="backPrimaryText"></div>
+                                    <button class="speak-btn back" id="backSpeakBtn" title="播放發音">
+                                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
+                                            stroke="currentColor" stroke-width="2">
+                                            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                                            <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                                            <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+                                        </svg>
+                                    </button>
+                                </div>
+                                <div class="card-pronunciation" id="backSecondaryText" style="margin-bottom: 0.5rem;">
+                                </div>
+                                <div class="card-example" id="backTertiaryText"></div>
+                                <div class="card-hint">點擊翻回 →</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Rating Buttons -->
+                    <div class="rating-container" id="ratingContainer">
+                        <p class="rating-prompt">你記得多少？</p>
+                        <div class="rating-buttons">
+                            <button class="rating-btn forgot" data-rating="0" id="ratingForgot">
+                                <span class="rating-emoji">😵</span>
+                                <span class="rating-text">完全忘記</span>
+                                <span class="rating-schedule" id="schedForgot"></span>
+                            </button>
+                            <button class="rating-btn hard" data-rating="1" id="ratingHard">
+                                <span class="rating-emoji">😰</span>
+                                <span class="rating-text">有點困難</span>
+                                <span class="rating-schedule" id="schedHard"></span>
+                            </button>
+                            <button class="rating-btn good" data-rating="2" id="ratingGood">
+                                <span class="rating-emoji">😊</span>
+                                <span class="rating-text">記得！</span>
+                                <span class="rating-schedule" id="schedGood"></span>
+                            </button>
+                            <button class="rating-btn easy" data-rating="3" id="ratingEasy">
+                                <span class="rating-emoji">🤩</span>
+                                <span class="rating-text">太簡單</span>
+                                <span class="rating-schedule" id="schedEasy"></span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Review Complete -->
+            <div class="review-complete" id="reviewComplete" style="display:none;">
+                <div class="complete-icon">🏆</div>
+                <h2>複習完成！</h2>
+                <div class="complete-stats">
+                    <div class="complete-stat">
+                        <span class="complete-stat-num" id="completeTotal">0</span>
+                        <span class="complete-stat-label">已複習</span>
+                    </div>
+                    <div class="complete-stat">
+                        <span class="complete-stat-num" id="completeCorrect">0</span>
+                        <span class="complete-stat-label">記得</span>
+                    </div>
+                    <div class="complete-stat">
+                        <span class="complete-stat-num" id="completeWrong">0</span>
+                        <span class="complete-stat-label">需加強</span>
+                    </div>
+                </div>
+                <button class="submit-btn" id="backToDashboard">回到儀表板</button>
+            </div>
+        </section>
+
+        <!-- ==================== LIBRARY VIEW ==================== -->
+        <section class="view" id="libraryView">
+            <div class="view-header">
+                <div>
+                    <h1 class="view-title">字庫 📚</h1>
+                    <p class="view-subtitle">管理你所有的學習卡片</p>
+                </div>
+                <div class="library-controls">
+                    <div class="search-box">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <circle cx="11" cy="11" r="8" />
+                            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                        </svg>
+                        <input type="text" id="searchInput" class="search-input" placeholder="搜尋字句...">
+                    </div>
+                    <select id="filterCategory" class="filter-select">
+                        <option value="">所有分類</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="library-grid" id="libraryGrid">
+                <div class="empty-state" id="emptyLibrary">
+                    <div class="empty-icon">📭</div>
+                    <h3>字庫是空的</h3>
+                    <p>開始新增字句來建立你的學習庫吧！</p>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Settings Modal -->
+    <div class="modal-overlay" id="settingsModal">
+        <div class="modal-content settings-modal">
+            <h3>⚙️ 設定</h3>
+            <div class="settings-section">
+                <label class="form-label" for="sheetUrlInput">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                    </svg>
+                    Google Apps Script URL
+                </label>
+                <input type="url" id="sheetUrlInput" class="form-input" placeholder="貼上你的 Apps Script Web App URL"
+                    autocomplete="off">
+                <p class="settings-hint">部署 Apps Script 後產生的 URL，格式如：https://script.google.com/macros/s/xxx/exec</p>
+            </div>
+            <div class="settings-actions">
+                <button class="modal-btn cancel" id="cancelSettings">取消</button>
+                <button class="modal-btn sync-now" id="syncNowBtn">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="23 4 23 10 17 10" />
+                        <polyline points="1 20 1 14 7 14" />
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                    </svg>
+                    立即同步
+                </button>
+                <button class="modal-btn confirm" id="saveSettings">儲存設定</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Card Modal -->
+    <div class="modal-overlay" id="editModal">
+        <div class="modal-content edit-modal">
+            <h3>✏️ 編輯卡片</h3>
+            <form id="editForm" class="edit-form">
+                <input type="hidden" id="editCardId">
+                <div class="form-group">
+                    <label for="editWord" class="form-label">生字 / 字句</label>
+                    <input type="text" id="editWord" class="form-input" required autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label for="editPronunciation" class="form-label">發音 / 拼音</label>
+                    <input type="text" id="editPronunciation" class="form-input" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label for="editMeaning" class="form-label">翻譯 / 意思</label>
+                    <input type="text" id="editMeaning" class="form-input" required autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label for="editExample" class="form-label">例句</label>
+                    <textarea id="editExample" class="form-input form-textarea" rows="2"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="editCategory" class="form-label">分類標籤</label>
+                    <input type="text" id="editCategory" class="form-input" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label for="editLang" class="form-label">發音語言</label>
+                    <select id="editLang" class="form-input">
+                        <option value="en-US">English (美式)</option>
+                        <option value="en-GB">English (英式)</option>
+                        <option value="zh-TW">中文（繁體）</option>
+                        <option value="zh-CN">中文（簡體）</option>
+                        <option value="ja-JP">日本語</option>
+                        <option value="ko-KR">한국어</option>
+                        <option value="fr-FR">Français</option>
+                        <option value="de-DE">Deutsch</option>
+                        <option value="es-ES">Español</option>
+                        <option value="it-IT">Italiano</option>
+                        <option value="pt-BR">Português</option>
+                        <option value="th-TH">ภาษาไทย</option>
+                        <option value="vi-VN">Tiếng Việt</option>
+                    </select>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="modal-btn cancel" id="cancelEdit">取消</button>
+                    <button type="submit" class="modal-btn confirm edit-save">儲存變更</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div class="modal-overlay" id="deleteModal">
+        <div class="modal-content">
+            <div class="modal-icon">⚠️</div>
+            <h3>確認刪除</h3>
+            <p>確定要刪除這張卡片嗎？此操作無法復原。</p>
+            <div class="modal-actions">
+                <button class="modal-btn cancel" id="cancelDelete">取消</button>
+                <button class="modal-btn confirm" id="confirmDelete">確認刪除</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-spinner"></div>
+        <span class="loading-text" id="loadingText">同步中...</span>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>

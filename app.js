@@ -1,0 +1,1156 @@
+/* =============================================
+   CRYSTAL LEARNING - Spaced Repetition System
+   Application Logic
+   ============================================= */
+
+// ── Spaced Repetition Intervals (in days) ──
+const INTERVALS = [0, 1, 2, 4, 7, 15, 30]; // Level 0-6
+
+// ── State ──
+let cards = [];
+let reviewQueue = [];
+let currentReviewIndex = 0;
+let reviewStats = { total: 0, correct: 0, wrong: 0 };
+let deleteTargetId = null;
+let isOnline = false;
+let currentLearningLang = localStorage.getItem('crystal_learning_lang') || 'english';
+
+// ── DOM Elements ──
+const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => document.querySelectorAll(sel);
+
+// ── Google Sheets API URL ──
+function getSheetUrl() {
+  return localStorage.getItem('crystal_learning_sheet_url') || '';
+}
+
+function setSheetUrl(url) {
+  localStorage.setItem('crystal_learning_sheet_url', url);
+}
+
+// ── Initialize ──
+document.addEventListener('DOMContentLoaded', async () => {
+  loadCardsFromLocal();
+  initParticles();
+  initNavigation();
+  initLangToggle();
+  initAddForm();
+  initReview();
+  initLibrary();
+  initModal();
+  initSettings();
+  updateDateDisplay();
+
+  // Apply language context to start
+  $('#learningLangSelect').value = currentLearningLang;
+  updateLanguageContextText();
+  updateDashboard();
+
+  // Try to connect to Google Sheets
+  if (getSheetUrl()) {
+    await syncFromSheet();
+  }
+});
+
+// ── LocalStorage ──
+function loadCardsFromLocal() {
+  try {
+    const data = localStorage.getItem('crystal_learning_cards');
+    cards = data ? JSON.parse(data) : [];
+  } catch (e) {
+    cards = [];
+  }
+}
+
+function saveCardsToLocal() {
+  localStorage.setItem('crystal_learning_cards', JSON.stringify(cards));
+}
+
+// ── Google Sheets API ──
+const SheetAPI = {
+  async loadAll() {
+    const url = getSheetUrl();
+    if (!url) return null;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.success) return data.cards;
+    throw new Error(data.error || 'Failed to load');
+  },
+
+  async saveCard(card) {
+    const url = getSheetUrl();
+    if (!url) return;
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'save', card }),
+    });
+  },
+
+  async deleteCard(id) {
+    const url = getSheetUrl();
+    if (!url) return;
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'delete', id }),
+    });
+  },
+
+  async syncAll(cardsData) {
+    const url = getSheetUrl();
+    if (!url) return;
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'sync', cards: cardsData }),
+    });
+  },
+};
+
+// ── Sync functions ──
+async function syncFromSheet() {
+  const url = getSheetUrl();
+  if (!url) {
+    updateSyncStatus('offline');
+    return;
+  }
+  updateSyncStatus('syncing');
+  try {
+    const sheetCards = await SheetAPI.loadAll();
+    if (sheetCards && sheetCards.length > 0) {
+      cards = sheetCards;
+      saveCardsToLocal();
+    } else if (cards.length > 0) {
+      // Sheet is empty but local has data — push local to sheet
+      await SheetAPI.syncAll(cards);
+    }
+    updateSyncStatus('connected');
+    updateDashboard();
+  } catch (e) {
+    console.warn('Sheet sync failed:', e);
+    updateSyncStatus('error');
+  }
+}
+
+async function saveCardToSheet(card) {
+  if (!getSheetUrl()) return;
+  try {
+    updateSyncStatus('syncing');
+    await SheetAPI.saveCard(card);
+    updateSyncStatus('connected');
+  } catch (e) {
+    console.warn('Save to sheet failed:', e);
+    updateSyncStatus('error');
+  }
+}
+
+async function deleteCardFromSheet(id) {
+  if (!getSheetUrl()) return;
+  try {
+    updateSyncStatus('syncing');
+    await SheetAPI.deleteCard(id);
+    updateSyncStatus('connected');
+  } catch (e) {
+    console.warn('Delete from sheet failed:', e);
+    updateSyncStatus('error');
+  }
+}
+
+function updateSyncStatus(status) {
+  const dot = $('#syncDot');
+  const label = $('#syncLabel');
+  dot.className = 'sync-dot';
+  isOnline = false;
+
+  switch (status) {
+    case 'connected':
+      dot.classList.add('connected');
+      label.textContent = '已連線';
+      isOnline = true;
+      break;
+    case 'syncing':
+      dot.classList.add('syncing');
+      label.textContent = '同步中';
+      break;
+    case 'error':
+      dot.classList.add('error');
+      label.textContent = '連線失敗';
+      break;
+    default:
+      label.textContent = '未連線';
+  }
+}
+
+function showLoading(text = '同步中...') {
+  $('#loadingText').textContent = text;
+  $('#loadingOverlay').classList.add('active');
+}
+
+function hideLoading() {
+  $('#loadingOverlay').classList.remove('active');
+}
+
+function loadStreak() {
+  try {
+    const data = localStorage.getItem('crystal_learning_streak');
+    return data ? JSON.parse(data) : { count: 0, lastDate: null };
+  } catch (e) {
+    return { count: 0, lastDate: null };
+  }
+}
+
+function saveStreak(streak) {
+  localStorage.setItem('crystal_learning_streak', JSON.stringify(streak));
+}
+
+// ── Language Context Helpers ──
+function initLangToggle() {
+  $('#learningLangSelect').addEventListener('change', (e) => {
+    currentLearningLang = e.target.value;
+    localStorage.setItem('crystal_learning_lang', currentLearningLang);
+
+    updateLanguageContextText();
+
+    // Refresh currently active views immediately
+    if ($('#dashboardView').classList.contains('active')) updateDashboard();
+    if ($('#reviewView').classList.contains('active')) startReviewSession();
+    if ($('#libraryView').classList.contains('active')) renderLibrary();
+  });
+}
+
+function updateLanguageContextText() {
+  const isEnglish = currentLearningLang === 'english';
+  $('#dashboardTitle').textContent = `歡迎回來 ✨ - ${isEnglish ? '英文' : '日文'}學習`;
+  $('#reviewTitle').textContent = `複習卡片 📖 - ${isEnglish ? '英文' : '日文'}`;
+  $('#inputLang').value = isEnglish ? 'en-US' : 'ja-JP';
+}
+
+function getCardsByLang() {
+  return cards.filter(c => {
+    if (currentLearningLang === 'english') {
+      return c.lang === 'en-US' || c.lang === 'en-GB';
+    } else if (currentLearningLang === 'japanese') {
+      return c.lang === 'ja-JP';
+    }
+    return true; // fallback
+  });
+}
+
+// ── Text-to-Speech (TTS) ──
+function speakText(text, lang = 'en-US', btnElement = null) {
+  if (!text || !window.speechSynthesis) return;
+
+  // Stop any ongoing speech
+  window.speechSynthesis.cancel();
+
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = lang;
+  utterance.rate = 0.85;
+  utterance.pitch = 1;
+  utterance.volume = 1;
+
+  // Try to find a matching voice
+  const voices = window.speechSynthesis.getVoices();
+  const matchingVoice = voices.find(v => v.lang === lang) ||
+    voices.find(v => v.lang.startsWith(lang.split('-')[0]));
+  if (matchingVoice) {
+    utterance.voice = matchingVoice;
+  }
+
+  // Animate button
+  if (btnElement) {
+    btnElement.classList.add('speaking');
+    utterance.onend = () => btnElement.classList.remove('speaking');
+    utterance.onerror = () => btnElement.classList.remove('speaking');
+  }
+
+  window.speechSynthesis.speak(utterance);
+}
+
+// Preload voices (some browsers load them async)
+if (window.speechSynthesis) {
+  window.speechSynthesis.onvoiceschanged = () => {
+    window.speechSynthesis.getVoices();
+  };
+}
+
+// ── UUID Generator ──
+function generateId() {
+  return Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
+}
+
+// ── Date Helpers ──
+function getToday() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+}
+
+function formatDate(timestamp) {
+  const date = new Date(timestamp);
+  const months = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
+  return `${months[date.getMonth()]}${date.getDate()}日`;
+}
+
+function daysDiff(from, to) {
+  return Math.floor((to - from) / (1000 * 60 * 60 * 24));
+}
+
+function addDays(timestamp, days) {
+  return timestamp + days * 24 * 60 * 60 * 1000;
+}
+
+function getRelativeDay(timestamp) {
+  const today = getToday();
+  const diff = daysDiff(today, timestamp);
+  if (diff < 0) return '已逾期';
+  if (diff === 0) return '今天';
+  if (diff === 1) return '明天';
+  if (diff === 2) return '後天';
+  return `${diff} 天後`;
+}
+
+// ── Background Particles ──
+function initParticles() {
+  const container = $('#bgParticles');
+  const colors = [
+    'rgba(99, 102, 241, 0.3)',
+    'rgba(168, 85, 247, 0.25)',
+    'rgba(236, 72, 153, 0.2)',
+    'rgba(59, 130, 246, 0.25)',
+  ];
+
+  for (let i = 0; i < 15; i++) {
+    const particle = document.createElement('div');
+    particle.className = 'particle';
+    const size = Math.random() * 4 + 2;
+    particle.style.width = `${size}px`;
+    particle.style.height = `${size}px`;
+    particle.style.left = `${Math.random() * 100}%`;
+    particle.style.background = colors[Math.floor(Math.random() * colors.length)];
+    particle.style.animationDuration = `${Math.random() * 15 + 10}s`;
+    particle.style.animationDelay = `${Math.random() * 10}s`;
+    container.appendChild(particle);
+  }
+}
+
+// ── Navigation ──
+function initNavigation() {
+  $$('.nav-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const view = btn.dataset.view;
+      switchView(view);
+    });
+  });
+
+  // Quick actions
+  $('#quickReview').addEventListener('click', () => switchView('review'));
+  $('#quickAdd').addEventListener('click', () => switchView('add'));
+  $('#emptyAddBtn').addEventListener('click', () => switchView('add'));
+  $('#backToDashboard').addEventListener('click', () => switchView('dashboard'));
+}
+
+function switchView(viewName) {
+  if (!viewName) return;
+  // Update nav
+  $$('.nav-btn').forEach(btn => {
+    if (btn.dataset.view) {
+      btn.classList.toggle('active', btn.dataset.view === viewName);
+    }
+  });
+
+  // Update views
+  $$('.view').forEach(v => v.classList.remove('active'));
+  const targetView = $(`#${viewName}View`);
+  if (targetView) {
+    targetView.classList.add('active');
+  }
+
+  // Trigger view-specific updates
+  if (viewName === 'dashboard') updateDashboard();
+  if (viewName === 'review') startReviewSession();
+  if (viewName === 'library') renderLibrary();
+}
+
+// ── Date Display ──
+function updateDateDisplay() {
+  const now = new Date();
+  const weekdays = ['週日', '週一', '週二', '週三', '週四', '週五', '週六'];
+  const months = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
+  $('#dateDisplay').textContent = `${now.getFullYear()}年 ${months[now.getMonth()]}${now.getDate()}日 ${weekdays[now.getDay()]}`;
+}
+
+// ── Dashboard ──
+function updateDashboard() {
+  const activeCards = getCardsByLang();
+  const today = getToday();
+  const dueCards = activeCards.filter(c => c.nextReview <= today);
+  const masteredCards = activeCards.filter(c => c.level >= 5);
+
+  // Update stats
+  $('#statTotal').textContent = activeCards.length;
+  $('#statDue').textContent = dueCards.length;
+  $('#statMastered').textContent = masteredCards.length;
+
+  // Streak
+  const streak = loadStreak();
+  const todayStr = new Date().toDateString();
+  $('#statStreak').textContent = streak.count;
+
+  // Review count label
+  if (dueCards.length > 0) {
+    $('#reviewCountLabel').textContent = `有 ${dueCards.length} 張卡片待複習`;
+  } else {
+    $('#reviewCountLabel').textContent = '太棒了！沒有待複習的卡片';
+  }
+
+  // Animate stat numbers
+  animateNumbers();
+
+  // Schedule timeline
+  renderSchedule(activeCards);
+}
+
+function animateNumbers() {
+  $$('.stat-number').forEach(el => {
+    const target = parseInt(el.textContent);
+    let current = 0;
+    const increment = Math.max(1, Math.ceil(target / 20));
+    const interval = setInterval(() => {
+      current += increment;
+      if (current >= target) {
+        el.textContent = target;
+        clearInterval(interval);
+      } else {
+        el.textContent = current;
+      }
+    }, 30);
+  });
+}
+
+function renderSchedule(filteredCards) {
+  const timeline = $('#scheduleTimeline');
+  const today = getToday();
+
+  if (!filteredCards || filteredCards.length === 0) {
+    timeline.innerHTML = `
+      <div class="empty-state small">
+        <p>尚無排程，請先新增字句！</p>
+      </div>`;
+    return;
+  }
+
+  // Group cards by review date
+  const groups = {};
+  filteredCards.forEach(card => {
+    const reviewDate = new Date(card.nextReview);
+    const dateKey = new Date(reviewDate.getFullYear(), reviewDate.getMonth(), reviewDate.getDate()).getTime();
+    if (!groups[dateKey]) groups[dateKey] = [];
+    groups[dateKey].push(card);
+  });
+
+  // Sort and display the next 7 groups
+  const sortedDates = Object.keys(groups).map(Number).sort((a, b) => a - b).slice(0, 7);
+
+  if (sortedDates.length === 0) {
+    timeline.innerHTML = `
+      <div class="empty-state small">
+        <p>尚無排程</p>
+      </div>`;
+    return;
+  }
+
+  timeline.innerHTML = sortedDates.map(dateKey => {
+    const count = groups[dateKey].length;
+    const diff = daysDiff(today, dateKey);
+    let countClass = 'later';
+    if (diff <= 0) countClass = 'today';
+    else if (diff === 1) countClass = 'tomorrow';
+
+    const relative = getRelativeDay(dateKey);
+    const dateStr = formatDate(dateKey);
+    const words = groups[dateKey].slice(0, 3).map(c => c.word).join('、');
+    const extra = count > 3 ? `⋯等 ${count} 個` : '';
+
+    return `
+      <div class="schedule-day">
+        <span class="schedule-date">${relative}</span>
+        <span class="schedule-count ${countClass}">${count}</span>
+        <span class="schedule-label">${dateStr} — ${words}${extra}</span>
+      </div>`;
+  }).join('');
+}
+
+// ── Add Form ──
+function initAddForm() {
+  $('#addForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const word = $('#inputWord').value.trim();
+    const pronunciation = $('#inputPronunciation').value.trim();
+    const meaning = $('#inputMeaning').value.trim();
+    const example = $('#inputExample').value.trim();
+    const category = $('#inputCategory').value.trim();
+    const lang = $('#inputLang').value;
+
+    if (!word || !meaning) return;
+
+    const newCard = {
+      id: generateId(),
+      word,
+      pronunciation,
+      meaning,
+      example,
+      category,
+      lang,
+      level: 0,
+      nextReview: getToday(),
+      createdAt: Date.now(),
+      reviewCount: 0,
+    };
+
+    cards.push(newCard);
+    saveCardsToLocal();
+
+    // Reset form
+    $('#addForm').reset();
+    $('#inputWord').focus();
+
+    // Show toast
+    showToast(`「${word}」已成功加入字庫！`);
+
+    // Sync to Sheet in background
+    saveCardToSheet(newCard);
+  });
+}
+
+function showToast(message) {
+  const toast = $('#successToast');
+  $('#toastMessage').textContent = message;
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 2500);
+}
+
+// ── Review System ──
+function initReview() {
+  // Flashcard flip
+  $('#flashcard').addEventListener('click', () => {
+    const card = $('#flashcard');
+    card.classList.toggle('flipped');
+
+    // Show rating when flipped
+    if (card.classList.contains('flipped')) {
+      setTimeout(() => {
+        $('#ratingContainer').classList.add('visible');
+      }, 300);
+    } else {
+      $('#ratingContainer').classList.remove('visible');
+    }
+  });
+
+  // Speak buttons on flashcard
+  $('#frontSpeakBtn').addEventListener('click', (e) => {
+    e.stopPropagation(); // Don't flip the card
+    if (currentReviewIndex < reviewQueue.length) {
+      const card = reviewQueue[currentReviewIndex];
+      const mode = $('#reviewModeSelect').value;
+      if (mode === 'word-first') {
+        speakText(card.word, card.lang || 'en-US', e.currentTarget);
+      } else {
+        speakText(card.meaning, 'zh-TW', e.currentTarget);
+      }
+    }
+  });
+
+  $('#backSpeakBtn').addEventListener('click', (e) => {
+    e.stopPropagation(); // Don't flip the card
+    if (currentReviewIndex < reviewQueue.length) {
+      const card = reviewQueue[currentReviewIndex];
+      const mode = $('#reviewModeSelect').value;
+      if (mode === 'word-first') {
+        speakText(card.meaning, 'zh-TW', e.currentTarget);
+      } else {
+        speakText(card.word, card.lang || 'en-US', e.currentTarget);
+      }
+    }
+  });
+
+  // Handle Review Mode switch mid-review
+  $('#reviewModeSelect').addEventListener('change', () => {
+    if ($('#reviewView').classList.contains('active') && reviewQueue.length > 0 && currentReviewIndex < reviewQueue.length) {
+      showCurrentCard();
+    }
+  });
+
+  // Rating buttons
+  $$('.rating-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const rating = parseInt(btn.dataset.rating);
+      handleRating(rating);
+    });
+  });
+}
+
+function startReviewSession() {
+  const today = getToday();
+  const activeCards = getCardsByLang();
+  reviewQueue = activeCards.filter(c => c.nextReview <= today);
+  currentReviewIndex = 0;
+  reviewStats = { total: reviewQueue.length, correct: 0, wrong: 0 };
+
+  // Reset UI
+  $('#reviewComplete').style.display = 'none';
+  $('#flashcardContainer').style.display = 'none';
+  $('#emptyReview').style.display = 'none';
+
+  if (reviewQueue.length === 0) {
+    $('#emptyReview').style.display = 'flex';
+    $('#reviewProgressText').textContent = '0 / 0';
+    $('#reviewProgressFill').style.width = '0%';
+    $('#reviewSubtitle').textContent = '目前沒有待複習的卡片';
+    return;
+  }
+
+  // Shuffle review queue
+  shuffleArray(reviewQueue);
+
+  $('#flashcardContainer').style.display = 'flex';
+  $('#reviewSubtitle').textContent = '翻轉卡片查看答案';
+  showCurrentCard();
+}
+
+function showCurrentCard() {
+  if (currentReviewIndex >= reviewQueue.length) {
+    finishReview();
+    return;
+  }
+
+  const card = reviewQueue[currentReviewIndex];
+
+  // Update progress
+  $('#reviewProgressText').textContent = `${currentReviewIndex + 1} / ${reviewQueue.length}`;
+  const progress = ((currentReviewIndex) / reviewQueue.length) * 100;
+  $('#reviewProgressFill').style.width = `${progress}%`;
+
+  // Reset flip state
+  $('#flashcard').classList.remove('flipped');
+  $('#ratingContainer').classList.remove('visible');
+
+  // Set card content general items
+  const levelNames = ['新學', '初學', '學習中', '熟悉中', '進階', '精通', '大師'];
+  $('#cardLevelBadge').textContent = `Level ${card.level} — ${levelNames[Math.min(card.level, 6)]}`;
+  $('#cardLevelBadgeBack').textContent = `Level ${card.level}`;
+  $('#cardCategory').textContent = card.category || '';
+
+  const mode = $('#reviewModeSelect').value;
+
+  if (mode === 'word-first') {
+    // Front shows the Word
+    $('#frontPrimaryText').className = 'card-word';
+    $('#frontPrimaryText').textContent = card.word;
+    $('#frontSecondaryText').textContent = card.pronunciation || '';
+    $('#frontSecondaryText').style.display = card.pronunciation ? 'block' : 'none';
+
+    // Back shows Meaning and Example
+    $('#backPrimaryText').className = 'card-meaning';
+    $('#backPrimaryText').textContent = card.meaning;
+    $('#backSecondaryText').style.display = 'none'; // No pronunciation on back by default
+    $('#backTertiaryText').textContent = card.example || '';
+    $('#backTertiaryText').style.display = card.example ? 'block' : 'none';
+
+  } else {
+    // Front shows Meaning (Quiz mode)
+    $('#frontPrimaryText').className = 'card-meaning';
+    $('#frontPrimaryText').textContent = card.meaning;
+    $('#frontSecondaryText').style.display = 'none';
+
+    // Back shows Word, Pronunciation, Example
+    $('#backPrimaryText').className = 'card-word';
+    $('#backPrimaryText').textContent = card.word;
+
+    $('#backSecondaryText').textContent = card.pronunciation || '';
+    $('#backSecondaryText').style.display = card.pronunciation ? 'block' : 'none';
+
+    $('#backTertiaryText').textContent = card.example || '';
+    $('#backTertiaryText').style.display = card.example ? 'block' : 'none';
+  }
+
+  // Update schedule hints
+  updateScheduleHints(card);
+}
+
+function updateScheduleHints(card) {
+  // Forgot: reset to level 0
+  const forgotDays = INTERVALS[0];
+  $('#schedForgot').textContent = `重置 → 今天`;
+
+  // Hard: stay same level
+  const hardDays = INTERVALS[Math.min(card.level, INTERVALS.length - 1)];
+  $('#schedHard').textContent = hardDays === 0 ? '今天再複習' : `${hardDays} 天後`;
+
+  // Good: advance 1 level
+  const goodLevel = Math.min(card.level + 1, INTERVALS.length - 1);
+  const goodDays = INTERVALS[goodLevel];
+  $('#schedGood').textContent = `${goodDays} 天後`;
+
+  // Easy: advance 2 levels
+  const easyLevel = Math.min(card.level + 2, INTERVALS.length - 1);
+  const easyDays = INTERVALS[easyLevel];
+  $('#schedEasy').textContent = `${easyDays} 天後`;
+}
+
+function handleRating(rating) {
+  const card = reviewQueue[currentReviewIndex];
+  const originalCard = cards.find(c => c.id === card.id);
+
+  if (!originalCard) return;
+
+  const today = getToday();
+
+  switch (rating) {
+    case 0: // Forgot
+      originalCard.level = 0;
+      originalCard.nextReview = today;
+      reviewStats.wrong++;
+      break;
+    case 1: // Hard - stay same level
+      originalCard.nextReview = addDays(today, INTERVALS[Math.min(originalCard.level, INTERVALS.length - 1)]);
+      reviewStats.wrong++;
+      break;
+    case 2: // Good - advance 1 level
+      originalCard.level = Math.min(originalCard.level + 1, INTERVALS.length - 1);
+      originalCard.nextReview = addDays(today, INTERVALS[originalCard.level]);
+      reviewStats.correct++;
+      break;
+    case 3: // Easy - advance 2 levels
+      originalCard.level = Math.min(originalCard.level + 2, INTERVALS.length - 1);
+      originalCard.nextReview = addDays(today, INTERVALS[originalCard.level]);
+      reviewStats.correct++;
+      break;
+  }
+
+  originalCard.reviewCount++;
+  saveCardsToLocal();
+
+  // Sync to sheet in background
+  saveCardToSheet(originalCard);
+
+  // Animate to next card
+  currentReviewIndex++;
+
+  // Small delay for user feedback
+  setTimeout(() => {
+    showCurrentCard();
+  }, 300);
+}
+
+function finishReview() {
+  // Update streak
+  const streak = loadStreak();
+  const todayStr = new Date().toDateString();
+  if (streak.lastDate !== todayStr) {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    if (streak.lastDate === yesterday.toDateString()) {
+      streak.count++;
+    } else if (streak.lastDate !== todayStr) {
+      streak.count = 1;
+    }
+    streak.lastDate = todayStr;
+    saveStreak(streak);
+  }
+
+  // Show completion
+  $('#flashcardContainer').style.display = 'none';
+  $('#reviewComplete').style.display = 'flex';
+  $('#reviewProgressFill').style.width = '100%';
+
+  $('#completeTotal').textContent = reviewStats.total;
+  $('#completeCorrect').textContent = reviewStats.correct;
+  $('#completeWrong').textContent = reviewStats.wrong;
+
+  // Animate numbers
+  $$('.complete-stat-num').forEach(el => {
+    const target = parseInt(el.textContent);
+    el.textContent = '0';
+    let current = 0;
+    const increment = Math.max(1, Math.ceil(target / 15));
+    const interval = setInterval(() => {
+      current += increment;
+      if (current >= target) {
+        el.textContent = target;
+        clearInterval(interval);
+      } else {
+        el.textContent = current;
+      }
+    }, 50);
+  });
+}
+
+// ── Library ──
+function initLibrary() {
+  $('#searchInput').addEventListener('input', renderLibrary);
+  $('#filterCategory').addEventListener('change', renderLibrary);
+}
+
+function renderLibrary() {
+  const grid = $('#libraryGrid');
+  const searchTerm = $('#searchInput').value.toLowerCase().trim();
+  const filterCat = $('#filterCategory').value;
+
+  const activeCards = getCardsByLang();
+
+  // Update category filter
+  updateCategoryFilter(activeCards);
+
+  // Filter cards
+  let filtered = [...activeCards];
+
+  if (searchTerm) {
+    filtered = filtered.filter(c =>
+      c.word.toLowerCase().includes(searchTerm) ||
+      c.meaning.toLowerCase().includes(searchTerm) ||
+      (c.pronunciation && c.pronunciation.toLowerCase().includes(searchTerm)) ||
+      (c.example && c.example.toLowerCase().includes(searchTerm))
+    );
+  }
+
+  if (filterCat) {
+    filtered = filtered.filter(c => c.category === filterCat);
+  }
+
+  // Sort by creation date (newest first)
+  filtered.sort((a, b) => b.createdAt - a.createdAt);
+
+  if (filtered.length === 0) {
+    grid.innerHTML = `
+      <div class="empty-state" id="emptyLibrary" style="grid-column: 1 / -1;">
+        <div class="empty-icon">${activeCards.length === 0 ? '📭' : '🔍'}</div>
+        <h3>${activeCards.length === 0 ? '此語言的字庫是空的' : '找不到結果'}</h3>
+        <p>${activeCards.length === 0 ? '開始新增字句來建立你的學習庫吧！' : '試試其他搜尋關鍵字'}</p>
+      </div>`;
+    return;
+  }
+
+  const levelNames = ['新學', '初學', '學習中', '熟悉中', '進階', '精通', '大師'];
+
+  grid.innerHTML = filtered.map(card => {
+    const levelClass = `level-${Math.min(card.level, 6)}`;
+    const levelText = levelNames[Math.min(card.level, 6)];
+    const nextReview = getRelativeDay(card.nextReview);
+
+    return `
+      <div class="library-card ${levelClass}" data-id="${card.id}">
+        <div class="library-card-header">
+          <div>
+            <div class="library-card-word">${escapeHtml(card.word)}</div>
+            ${card.pronunciation ? `<div class="library-card-pronunciation">${escapeHtml(card.pronunciation)}</div>` : ''}
+          </div>
+          <div class="library-card-actions">
+            <button class="library-speak-btn" title="播放發音" data-word="${escapeHtml(card.word)}" data-lang="${card.lang || 'en-US'}">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+            </button>
+            <button class="card-action-btn edit" title="編輯" data-id="${card.id}">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+            </button>
+            <button class="card-action-btn delete" title="刪除" data-id="${card.id}">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="library-card-meaning">${escapeHtml(card.meaning)}</div>
+        ${card.example ? `<div class="library-card-example">${escapeHtml(card.example)}</div>` : ''}
+        <div class="library-card-footer">
+          ${card.category ? `<span class="library-card-tag">${escapeHtml(card.category)}</span>` : '<span></span>'}
+          <div style="display:flex; align-items:center; gap:0.75rem;">
+            <span class="library-card-level ${levelClass}">${levelText}</span>
+            <span class="library-card-next">📅 ${nextReview}</span>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+
+  // Attach delete listeners
+  grid.querySelectorAll('.card-action-btn.delete').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteTargetId = btn.dataset.id;
+      $('#deleteModal').classList.add('active');
+    });
+  });
+
+  // Attach edit listeners
+  grid.querySelectorAll('.card-action-btn.edit').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openEditModal(btn.dataset.id);
+    });
+  });
+
+  // Attach speak listeners in library
+  grid.querySelectorAll('.library-speak-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      speakText(btn.dataset.word, btn.dataset.lang, btn);
+    });
+  });
+}
+
+function openEditModal(id) {
+  const card = cards.find(c => c.id === id);
+  if (!card) return;
+
+  $('#editCardId').value = card.id;
+  $('#editWord').value = card.word || '';
+  $('#editPronunciation').value = card.pronunciation || '';
+  $('#editMeaning').value = card.meaning || '';
+  $('#editExample').value = card.example || '';
+  $('#editCategory').value = card.category || '';
+  $('#editLang').value = card.lang || 'en-US';
+
+  $('#editModal').classList.add('active');
+}
+
+function updateCategoryFilter(activeCards) {
+  const select = $('#filterCategory');
+  const currentValue = select.value;
+  const categories = [...new Set(activeCards.map(c => c.category).filter(Boolean))];
+
+  // Keep existing selected value
+  select.innerHTML = `<option value="">所有分類</option>` +
+    categories.map(cat => `<option value="${cat}" ${cat === currentValue ? 'selected' : ''}>${cat}</option>`).join('');
+}
+
+// ── Modal ──
+function initModal() {
+  $('#cancelDelete').addEventListener('click', () => {
+    $('#deleteModal').classList.remove('active');
+    deleteTargetId = null;
+  });
+
+  $('#confirmDelete').addEventListener('click', async () => {
+    if (deleteTargetId) {
+      cards = cards.filter(c => c.id !== deleteTargetId);
+      saveCardsToLocal();
+      renderLibrary();
+      showToast('卡片已刪除');
+      // Sync deletion to Sheet
+      deleteCardFromSheet(deleteTargetId);
+    }
+    $('#deleteModal').classList.remove('active');
+    deleteTargetId = null;
+  });
+
+  // Close on overlay click (Delete Modal)
+  $('#deleteModal').addEventListener('click', (e) => {
+    if (e.target === $('#deleteModal')) {
+      $('#deleteModal').classList.remove('active');
+      deleteTargetId = null;
+    }
+  });
+
+  // Edit Modal Event Listeners
+  $('#cancelEdit').addEventListener('click', () => {
+    $('#editModal').classList.remove('active');
+  });
+
+  $('#editForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const id = $('#editCardId').value;
+    const card = cards.find(c => c.id === id);
+    if (!card) return;
+
+    card.word = $('#editWord').value.trim();
+    card.pronunciation = $('#editPronunciation').value.trim();
+    card.meaning = $('#editMeaning').value.trim();
+    card.example = $('#editExample').value.trim();
+    card.category = $('#editCategory').value.trim();
+    card.lang = $('#editLang').value;
+
+    saveCardsToLocal();
+    renderLibrary();
+    showToast('卡片已更新');
+    saveCardToSheet(card);
+
+    $('#editModal').classList.remove('active');
+  });
+
+  // Close on overlay click (Edit Modal)
+  $('#editModal').addEventListener('click', (e) => {
+    if (e.target === $('#editModal')) {
+      $('#editModal').classList.remove('active');
+    }
+  });
+}
+
+// ── Settings ──
+function initSettings() {
+  const modal = $('#settingsModal');
+  const urlInput = $('#sheetUrlInput');
+
+  // Load saved URL
+  urlInput.value = getSheetUrl();
+
+  // Open settings
+  $('#settingsBtn').addEventListener('click', () => {
+    urlInput.value = getSheetUrl();
+    modal.classList.add('active');
+  });
+
+  // Cancel
+  $('#cancelSettings').addEventListener('click', () => {
+    modal.classList.remove('active');
+  });
+
+  // Save
+  $('#saveSettings').addEventListener('click', () => {
+    const url = urlInput.value.trim();
+    setSheetUrl(url);
+    modal.classList.remove('active');
+
+    if (url) {
+      showToast('設定已儲存，正在連線...');
+      syncFromSheet();
+    } else {
+      updateSyncStatus('offline');
+      showToast('已清除 Google Sheets 連線');
+    }
+  });
+
+  // Sync now
+  $('#syncNowBtn').addEventListener('click', async () => {
+    const url = urlInput.value.trim();
+    if (!url) {
+      showToast('請先填入 Apps Script URL');
+      return;
+    }
+    setSheetUrl(url);
+    modal.classList.remove('active');
+    showLoading('正在同步資料到 Google Sheets...');
+
+    try {
+      updateSyncStatus('syncing');
+      await SheetAPI.syncAll(cards);
+      updateSyncStatus('connected');
+      showToast(`已成功同步 ${cards.length} 張卡片到 Google Sheets`);
+    } catch (e) {
+      console.error('Sync failed:', e);
+      updateSyncStatus('error');
+      showToast('同步失敗，請檢查 URL 是否正確');
+    } finally {
+      hideLoading();
+    }
+  });
+
+  // Click sync status to open settings
+  $('#syncStatusBtn').addEventListener('click', () => {
+    urlInput.value = getSheetUrl();
+    modal.classList.add('active');
+  });
+
+  // Close on overlay click
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      modal.classList.remove('active');
+    }
+  });
+}
+
+// ── Utility Functions ──
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function shuffleArray(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+// ── Keyboard Shortcuts ──
+document.addEventListener('keydown', (e) => {
+  // Don't trigger if user is typing in an input
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+  switch (e.key) {
+    case '1':
+      switchView('dashboard');
+      break;
+    case '2':
+      switchView('add');
+      break;
+    case '3':
+      switchView('review');
+      break;
+    case '4':
+      switchView('library');
+      break;
+    case ' ':
+    case 'Enter':
+      // Flip card during review
+      if ($('#reviewView').classList.contains('active') && $('#flashcardContainer').style.display !== 'none') {
+        e.preventDefault();
+        $('#flashcard').click();
+      }
+      break;
+    case 'ArrowLeft':
+    case 'a':
+      // Rating: forgot
+      if ($('#ratingContainer').classList.contains('visible')) {
+        e.preventDefault();
+        handleRating(0);
+      }
+      break;
+    case 'ArrowDown':
+    case 's':
+      // Rating: hard
+      if ($('#ratingContainer').classList.contains('visible')) {
+        e.preventDefault();
+        handleRating(1);
+      }
+      break;
+    case 'ArrowUp':
+    case 'd':
+      // Rating: good
+      if ($('#ratingContainer').classList.contains('visible')) {
+        e.preventDefault();
+        handleRating(2);
+      }
+      break;
+    case 'ArrowRight':
+    case 'f':
+      // Rating: easy
+      if ($('#ratingContainer').classList.contains('visible')) {
+        e.preventDefault();
+        handleRating(3);
+      }
+      break;
+    case 'p':
+      // Speak current word
+      if ($('#reviewView').classList.contains('active') && currentReviewIndex < reviewQueue.length) {
+        e.preventDefault();
+        const card = reviewQueue[currentReviewIndex];
+        const isFlipped = $('#flashcard').classList.contains('flipped');
+        const mode = $('#reviewModeSelect').value;
+
+        let shouldSpeakWord = false;
+        if (mode === 'word-first') {
+          shouldSpeakWord = !isFlipped; // Front = Word, Back = Meaning
+        } else {
+          shouldSpeakWord = isFlipped; // Front = Meaning, Back = Word
+        }
+
+        if (shouldSpeakWord) {
+          speakText(card.word, card.lang || 'en-US', isFlipped ? $('#backSpeakBtn') : $('#frontSpeakBtn'));
+        } else {
+          speakText(card.meaning, 'zh-TW', isFlipped ? $('#backSpeakBtn') : $('#frontSpeakBtn'));
+        }
+      }
+      break;
+  }
+});
