@@ -45,6 +45,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('#learningLangSelect').value = currentLearningLang;
   updateLanguageContextText();
   updateDashboard();
+  updateCategoryDatalist();
 
   // Try to connect to Google Sheets
   if (getSheetUrl()) {
@@ -64,6 +65,7 @@ function loadCardsFromLocal() {
 
 function saveCardsToLocal() {
   localStorage.setItem('crystal_learning_cards', JSON.stringify(cards));
+  updateCategoryDatalist();
 }
 
 // ── Google Sheets API ──
@@ -910,6 +912,15 @@ function openEditModal(id) {
   $('#editLang').value = card.lang || 'en-US';
 
   $('#editModal').classList.add('active');
+}
+
+// Keeps the category suggestions dropdown updated
+function updateCategoryDatalist() {
+  const datalist = $('#categoryList');
+  if (!datalist) return;
+
+  const categories = [...new Set(cards.map(c => c.category).filter(Boolean))];
+  datalist.innerHTML = categories.map(cat => `<option value="${escapeHtml(cat)}">`).join('');
 }
 
 function updateCategoryFilter(activeCards) {

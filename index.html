@@ -293,7 +293,8 @@
                             分類標籤（選填）
                         </label>
                         <input type="text" id="inputCategory" class="form-input" placeholder="例：法語, 日常用語"
-                            autocomplete="off">
+                            autocomplete="off" list="categoryList">
+                        <datalist id="categoryList"></datalist>
                     </div>
 
                     <div class="form-group">
@@ -560,7 +561,7 @@
                 </div>
                 <div class="form-group">
                     <label for="editCategory" class="form-label">分類標籤</label>
-                    <input type="text" id="editCategory" class="form-input" autocomplete="off">
+                    <input type="text" id="editCategory" class="form-input" autocomplete="off" list="categoryList">
                 </div>
                 <div class="form-group">
                     <label for="editLang" class="form-label">發音語言</label>
