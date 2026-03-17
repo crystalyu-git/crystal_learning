@@ -298,6 +298,19 @@
                     </div>
 
                     <div class="form-group">
+                        <label for="inputAudioUrl" class="form-label">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                                <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                            </svg>
+                            自訂音源 URL (Google Drive)（選填）
+                        </label>
+                        <input type="url" id="inputAudioUrl" class="form-input" placeholder="貼上 Google Drive 共用連結"
+                            autocomplete="off">
+                    </div>
+
+                    <div class="form-group">
                         <label for="inputLang" class="form-label">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="2">
@@ -562,6 +575,11 @@
                 <div class="form-group">
                     <label for="editCategory" class="form-label">分類標籤</label>
                     <input type="text" id="editCategory" class="form-input" autocomplete="off" list="categoryList">
+                </div>
+                <div class="form-group">
+                    <label for="editAudioUrl" class="form-label">自訂音源 URL (Google Drive)</label>
+                    <input type="url" id="editAudioUrl" class="form-input" placeholder="貼上 Google Drive 共用連結"
+                        autocomplete="off">
                 </div>
                 <div class="form-group">
                     <label for="editLang" class="form-label">發音語言</label>

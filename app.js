@@ -493,6 +493,7 @@ function initAddForm() {
     const meaning = $('#inputMeaning').value.trim();
     const example = $('#inputExample').value.trim();
     const category = $('#inputCategory').value.trim();
+    const audioUrl = $('#inputAudioUrl').value.trim();
     const lang = $('#inputLang').value;
 
     if (!word || !meaning) return;
@@ -504,6 +505,7 @@ function initAddForm() {
       meaning,
       example,
       category,
+      audioUrl,
       lang,
       level: 0,
       nextReview: getToday(),
@@ -517,6 +519,7 @@ function initAddForm() {
     // Reset form
     $('#addForm').reset();
     $('#inputWord').focus();
+    updateCategoryDatalist();
 
     // Show toast
     showToast(`「${word}」已成功加入字庫！`);
@@ -557,7 +560,7 @@ function initReview() {
       const card = reviewQueue[currentReviewIndex];
       const mode = $('#reviewModeSelect').value;
       if (mode === 'word-first') {
-        speakText(card.word, card.lang || 'en-US', e.currentTarget);
+        playOrSpeak(card, card.word, card.lang || 'en-US', e.currentTarget);
       } else {
         speakText(card.meaning, 'zh-TW', e.currentTarget);
       }
@@ -572,7 +575,7 @@ function initReview() {
       if (mode === 'word-first') {
         speakText(card.meaning, 'zh-TW', e.currentTarget);
       } else {
-        speakText(card.word, card.lang || 'en-US', e.currentTarget);
+        playOrSpeak(card, card.word, card.lang || 'en-US', e.currentTarget);
       }
     }
   });
@@ -850,7 +853,7 @@ function renderLibrary() {
             ${card.pronunciation ? `<div class="library-card-pronunciation">${escapeHtml(card.pronunciation)}</div>` : ''}
           </div>
           <div class="library-card-actions">
-            <button class="library-speak-btn" title="播放發音" data-word="${escapeHtml(card.word)}" data-lang="${card.lang || 'en-US'}">
+            <button class="library-speak-btn" title="播放發音" data-word="${escapeHtml(card.word)}" data-lang="${card.lang || 'en-US'}" data-audio-url="${escapeHtml(card.audioUrl || '')}">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
             </button>
             <button class="card-action-btn edit" title="編輯" data-id="${card.id}">
@@ -894,7 +897,7 @@ function renderLibrary() {
   grid.querySelectorAll('.library-speak-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      speakText(btn.dataset.word, btn.dataset.lang, btn);
+      playOrSpeak({ audioUrl: btn.dataset.audioUrl }, btn.dataset.word, btn.dataset.lang, btn);
     });
   });
 }
@@ -909,6 +912,7 @@ function openEditModal(id) {
   $('#editMeaning').value = card.meaning || '';
   $('#editExample').value = card.example || '';
   $('#editCategory').value = card.category || '';
+  $('#editAudioUrl').value = card.audioUrl || '';
   $('#editLang').value = card.lang || 'en-US';
 
   $('#editModal').classList.add('active');
@@ -977,6 +981,7 @@ function initModal() {
     card.meaning = $('#editMeaning').value.trim();
     card.example = $('#editExample').value.trim();
     card.category = $('#editCategory').value.trim();
+    card.audioUrl = $('#editAudioUrl').value.trim();
     card.lang = $('#editLang').value;
 
     saveCardsToLocal();
@@ -1157,7 +1162,7 @@ document.addEventListener('keydown', (e) => {
         }
 
         if (shouldSpeakWord) {
-          speakText(card.word, card.lang || 'en-US', isFlipped ? $('#backSpeakBtn') : $('#frontSpeakBtn'));
+          playOrSpeak(card, card.word, card.lang || 'en-US', isFlipped ? $('#backSpeakBtn') : $('#frontSpeakBtn'));
         } else {
           speakText(card.meaning, 'zh-TW', isFlipped ? $('#backSpeakBtn') : $('#frontSpeakBtn'));
         }
@@ -1165,3 +1170,61 @@ document.addEventListener('keydown', (e) => {
       break;
   }
 });
+
+// ── Audio Helpers ──
+function playOrSpeak(card, defaultText, lang, btnElement) {
+  if (card.audioUrl) {
+    playGoogleDriveAudio(card.audioUrl, btnElement, () => {
+      // Fallback to TTS if audio fails
+      speakText(defaultText, lang, btnElement);
+    });
+  } else {
+    speakText(defaultText, lang, btnElement);
+  }
+}
+
+// Global audio object to prevent overlapping playback
+let currentAudio = null;
+
+function playGoogleDriveAudio(url, btnElement, onErrorCallback) {
+  // Extract File ID from generic sharing link
+  const fileIdMatch = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  if (!fileIdMatch) {
+    // Treat as direct URL if it's not a standard GD sharing link
+    playDirectAudio(url, btnElement, onErrorCallback);
+    return;
+  }
+
+  const fileId = fileIdMatch[1];
+  const directUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
+  playDirectAudio(directUrl, btnElement, onErrorCallback);
+}
+
+function playDirectAudio(url, btnElement, onErrorCallback) {
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio.currentTime = 0;
+  }
+
+  if (window.speechSynthesis) window.speechSynthesis.cancel();
+
+  if (btnElement) btnElement.classList.add('speaking');
+
+  currentAudio = new Audio(url);
+
+  currentAudio.addEventListener('ended', () => {
+    if (btnElement) btnElement.classList.remove('speaking');
+  });
+
+  currentAudio.addEventListener('error', (e) => {
+    console.warn("Failed to play custom audio:", e);
+    if (btnElement) btnElement.classList.remove('speaking');
+    if (onErrorCallback) onErrorCallback();
+  });
+
+  currentAudio.play().catch(e => {
+    console.warn("Audio play blocked or failed:", e);
+    if (btnElement) btnElement.classList.remove('speaking');
+    if (onErrorCallback) onErrorCallback();
+  });
+}
