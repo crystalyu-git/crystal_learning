@@ -8,7 +8,7 @@
 // 2. 在第一列 (Row 1) 加入欄位標題：
 //    A1: id | B1: word | C1: pronunciation | D1: meaning
 //    E1: example | F1: category | G1: lang | H1: level
-//    I1: nextReview | J1: createdAt | K1: reviewCount
+//    I1: nextReview | J1: createdAt | K1: reviewCount | L1: audioUrl
 // 3. 點選 Extensions → Apps Script
 // 4. 刪除預設程式碼，貼上此檔案的全部內容
 // 5. 點選 Deploy → New deployment

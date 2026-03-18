@@ -19,17 +19,60 @@ let currentLearningLang = localStorage.getItem('crystal_learning_lang') || 'engl
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
-// ── Google Sheets API URL ──
-function getSheetUrl() {
-  return localStorage.getItem('crystal_learning_sheet_url') || '';
+// ── Notion Proxy API URL ──
+function getNotionProxyUrl() {
+  return localStorage.getItem('crystal_learning_notion_url') || '';
 }
 
-function setSheetUrl(url) {
-  localStorage.setItem('crystal_learning_sheet_url', url);
+function setNotionProxyUrl(url) {
+  localStorage.setItem('crystal_learning_notion_url', url);
+}
+
+// ── Theme Customization ──
+function applyTheme(theme) {
+  const root = document.documentElement;
+
+  if (theme.bgPrimary) {
+    root.style.setProperty('--bg-primary', theme.bgPrimary);
+    if ($('#colorBgPrimary')) $('#colorBgPrimary').value = theme.bgPrimary;
+  } else {
+    root.style.removeProperty('--bg-primary');
+    if ($('#colorBgPrimary')) $('#colorBgPrimary').value = '#0a0a1a';
+  }
+
+  if (theme.cardFront) {
+    root.style.setProperty('--card-front-bg', theme.cardFront);
+    if ($('#colorCardFront')) $('#colorCardFront').value = theme.cardFront;
+  } else {
+    root.style.removeProperty('--card-front-bg');
+    if ($('#colorCardFront')) $('#colorCardFront').value = '#19193c';
+  }
+
+  if (theme.cardBack) {
+    root.style.setProperty('--card-back-bg', theme.cardBack);
+    if ($('#colorCardBack')) $('#colorCardBack').value = theme.cardBack;
+  } else {
+    root.style.removeProperty('--card-back-bg');
+    if ($('#colorCardBack')) $('#colorCardBack').value = '#0e241c';
+  }
+}
+
+function loadTheme() {
+  const saved = localStorage.getItem('crystal_learning_theme');
+  if (saved) {
+    try {
+      applyTheme(JSON.parse(saved));
+    } catch (e) { }
+  }
+}
+
+function saveTheme(theme) {
+  localStorage.setItem('crystal_learning_theme', JSON.stringify(theme));
 }
 
 // ── Initialize ──
 document.addEventListener('DOMContentLoaded', async () => {
+  loadTheme();
   loadCardsFromLocal();
   initParticles();
   initNavigation();
@@ -47,9 +90,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   updateDashboard();
   updateCategoryDatalist();
 
-  // Try to connect to Google Sheets
-  if (getSheetUrl()) {
-    await syncFromSheet();
+  // Try to connect to Notion Proxy
+  if (getNotionProxyUrl()) {
+    await syncFromNotion();
   }
 });
 
@@ -68,10 +111,10 @@ function saveCardsToLocal() {
   updateCategoryDatalist();
 }
 
-// ── Google Sheets API ──
-const SheetAPI = {
+// ── Notion Proxy API ──
+const NotionAPI = {
   async loadAll() {
-    const url = getSheetUrl();
+    const url = getNotionProxyUrl();
     if (!url) return null;
     const res = await fetch(url);
     const data = await res.json();
@@ -80,7 +123,7 @@ const SheetAPI = {
   },
 
   async saveCard(card) {
-    const url = getSheetUrl();
+    const url = getNotionProxyUrl();
     if (!url) return;
     await fetch(url, {
       method: 'POST',
@@ -90,7 +133,7 @@ const SheetAPI = {
   },
 
   async deleteCard(id) {
-    const url = getSheetUrl();
+    const url = getNotionProxyUrl();
     if (!url) return;
     await fetch(url, {
       method: 'POST',
@@ -100,7 +143,7 @@ const SheetAPI = {
   },
 
   async syncAll(cardsData) {
-    const url = getSheetUrl();
+    const url = getNotionProxyUrl();
     if (!url) return;
     await fetch(url, {
       method: 'POST',
@@ -111,50 +154,50 @@ const SheetAPI = {
 };
 
 // ── Sync functions ──
-async function syncFromSheet() {
-  const url = getSheetUrl();
+async function syncFromNotion() {
+  const url = getNotionProxyUrl();
   if (!url) {
     updateSyncStatus('offline');
     return;
   }
   updateSyncStatus('syncing');
   try {
-    const sheetCards = await SheetAPI.loadAll();
-    if (sheetCards && sheetCards.length > 0) {
-      cards = sheetCards;
+    const notionCards = await NotionAPI.loadAll();
+    if (notionCards && notionCards.length > 0) {
+      cards = notionCards;
       saveCardsToLocal();
     } else if (cards.length > 0) {
-      // Sheet is empty but local has data — push local to sheet
-      await SheetAPI.syncAll(cards);
+      // Notion is empty but local has data — push local to Notion
+      await NotionAPI.syncAll(cards);
     }
     updateSyncStatus('connected');
     updateDashboard();
   } catch (e) {
-    console.warn('Sheet sync failed:', e);
+    console.warn('Notion sync failed:', e);
     updateSyncStatus('error');
   }
 }
 
-async function saveCardToSheet(card) {
-  if (!getSheetUrl()) return;
+async function saveCardToNotion(card) {
+  if (!getNotionProxyUrl()) return;
   try {
     updateSyncStatus('syncing');
-    await SheetAPI.saveCard(card);
+    await NotionAPI.saveCard(card);
     updateSyncStatus('connected');
   } catch (e) {
-    console.warn('Save to sheet failed:', e);
+    console.warn('Save to Notion failed:', e);
     updateSyncStatus('error');
   }
 }
 
-async function deleteCardFromSheet(id) {
-  if (!getSheetUrl()) return;
+async function deleteCardFromNotion(id) {
+  if (!getNotionProxyUrl()) return;
   try {
     updateSyncStatus('syncing');
-    await SheetAPI.deleteCard(id);
+    await NotionAPI.deleteCard(id);
     updateSyncStatus('connected');
   } catch (e) {
-    console.warn('Delete from sheet failed:', e);
+    console.warn('Delete from Notion failed:', e);
     updateSyncStatus('error');
   }
 }
@@ -240,6 +283,9 @@ function getCardsByLang() {
 }
 
 // ── Text-to-Speech (TTS) ──
+// Keep utterances globally to prevent aggressive Chrome Garbage Collection
+window.__ttsUtterances = window.__ttsUtterances || [];
+
 function speakText(text, lang = 'en-US', btnElement = null) {
   if (!text || !window.speechSynthesis) return;
 
@@ -247,27 +293,71 @@ function speakText(text, lang = 'en-US', btnElement = null) {
   window.speechSynthesis.cancel();
 
   const utterance = new SpeechSynthesisUtterance(text);
+
+  // Store reference to prevent GC
+  window.__ttsUtterances.push(utterance);
+  if (window.__ttsUtterances.length > 20) window.__ttsUtterances.shift();
   utterance.lang = lang;
   utterance.rate = 0.85;
   utterance.pitch = 1;
   utterance.volume = 1;
 
-  // Try to find a matching voice
-  const voices = window.speechSynthesis.getVoices();
-  const matchingVoice = voices.find(v => v.lang === lang) ||
-    voices.find(v => v.lang.startsWith(lang.split('-')[0]));
-  if (matchingVoice) {
-    utterance.voice = matchingVoice;
+  // Try to find the best matching premium voice
+  let voices = window.speechSynthesis.getVoices();
+
+  if (voices.length === 0) {
+    console.warn("[TTS] Voices empty on first call, retrying asynchronously...");
+  }
+
+  const baseLang = lang.split('-')[0].toLowerCase();
+
+  let availableVoices = voices.filter(v =>
+    v.lang.toLowerCase() === lang.toLowerCase() ||
+    v.lang.toLowerCase().startsWith(baseLang)
+  );
+
+  if (availableVoices.length > 0) {
+    // Score voices by quality heuristic
+    const getScore = (v) => {
+      let score = 0;
+      const name = v.name.toLowerCase();
+      // Highest priority to known neural/high-quality engines
+      if (name.includes('premium')) score += 10;
+      if (name.includes('enhanced')) score += 9;
+      if (name.includes('microsoft')) score += 8;
+      if (name.includes('google')) score += 7;
+      if (name.includes('siri')) score += 6;
+
+      // Exact locale match gets a boost
+      if (v.lang.toLowerCase() === lang.toLowerCase()) score += 3;
+      // Default voice fallback
+      if (v.default) score += 1;
+      return score;
+    };
+
+    availableVoices.sort((a, b) => getScore(b) - getScore(a));
+    utterance.voice = availableVoices[0];
+    console.log("Selected TTS Voice:", utterance.voice.name);
+  } else {
+    console.warn("No TTS voice found for language:", lang);
   }
 
   // Animate button
   if (btnElement) {
     btnElement.classList.add('speaking');
     utterance.onend = () => btnElement.classList.remove('speaking');
-    utterance.onerror = () => btnElement.classList.remove('speaking');
+    utterance.onerror = (e) => {
+      // Chrome sometimes fires 'canceled' falsely during start or immediately after cancel
+      if (e.error !== 'canceled') {
+        console.error("[TTS] Playback Error:", e);
+      }
+      btnElement.classList.remove('speaking');
+    };
   }
 
+  // Play immediately (must be synchronous for the very first interaction)
   window.speechSynthesis.speak(utterance);
+  console.log(`[TTS] Speaking: "${text}"`);
 }
 
 // Preload voices (some browsers load them async)
@@ -524,8 +614,8 @@ function initAddForm() {
     // Show toast
     showToast(`「${word}」已成功加入字庫！`);
 
-    // Sync to Sheet in background
-    saveCardToSheet(newCard);
+    // Sync to Notion in background
+    saveCardToNotion(newCard);
   });
 }
 
@@ -738,8 +828,8 @@ function handleRating(rating) {
   originalCard.reviewCount++;
   saveCardsToLocal();
 
-  // Sync to sheet in background
-  saveCardToSheet(originalCard);
+  // Sync to Notion in background
+  saveCardToNotion(originalCard);
 
   // Animate to next card
   currentReviewIndex++;
@@ -950,8 +1040,8 @@ function initModal() {
       saveCardsToLocal();
       renderLibrary();
       showToast('卡片已刪除');
-      // Sync deletion to Sheet
-      deleteCardFromSheet(deleteTargetId);
+      // Sync deletion to Notion
+      deleteCardFromNotion(deleteTargetId);
     }
     $('#deleteModal').classList.remove('active');
     deleteTargetId = null;
@@ -987,7 +1077,7 @@ function initModal() {
     saveCardsToLocal();
     renderLibrary();
     showToast('卡片已更新');
-    saveCardToSheet(card);
+    saveCardToNotion(card);
 
     $('#editModal').classList.remove('active');
   });
@@ -1006,31 +1096,59 @@ function initSettings() {
   const urlInput = $('#sheetUrlInput');
 
   // Load saved URL
-  urlInput.value = getSheetUrl();
+  urlInput.value = getNotionProxyUrl();
 
   // Open settings
   $('#settingsBtn').addEventListener('click', () => {
-    urlInput.value = getSheetUrl();
+    urlInput.value = getNotionProxyUrl();
     modal.classList.add('active');
   });
 
   // Cancel
   $('#cancelSettings').addEventListener('click', () => {
     modal.classList.remove('active');
+    loadTheme(); // Revert any unsaved live previews
+  });
+
+  // Theme Live Preview
+  $('#colorBgPrimary').addEventListener('input', (e) => {
+    document.documentElement.style.setProperty('--bg-primary', e.target.value);
+  });
+  $('#colorCardFront').addEventListener('input', (e) => {
+    document.documentElement.style.setProperty('--card-front-bg', e.target.value);
+  });
+  $('#colorCardBack').addEventListener('input', (e) => {
+    document.documentElement.style.setProperty('--card-back-bg', e.target.value);
+  });
+
+  // Theme Reset
+  $('#resetThemeBtn').addEventListener('click', () => {
+    localStorage.removeItem('crystal_learning_theme');
+    applyTheme({});
+    showToast('已還原為預設配色');
   });
 
   // Save
   $('#saveSettings').addEventListener('click', () => {
     const url = urlInput.value.trim();
-    setSheetUrl(url);
+    setNotionProxyUrl(url);
+
+    // Save Theme Configuration
+    const currentTheme = {
+      bgPrimary: $('#colorBgPrimary').value !== '#0a0a1a' ? $('#colorBgPrimary').value : '',
+      cardFront: $('#colorCardFront').value !== '#19193c' ? $('#colorCardFront').value : '',
+      cardBack: $('#colorCardBack').value !== '#0e241c' ? $('#colorCardBack').value : '',
+    };
+    saveTheme(currentTheme);
+
     modal.classList.remove('active');
 
     if (url) {
       showToast('設定已儲存，正在連線...');
-      syncFromSheet();
+      syncFromNotion();
     } else {
       updateSyncStatus('offline');
-      showToast('已清除 Google Sheets 連線');
+      showToast('已清除 Notion 連線');
     }
   });
 
@@ -1038,18 +1156,18 @@ function initSettings() {
   $('#syncNowBtn').addEventListener('click', async () => {
     const url = urlInput.value.trim();
     if (!url) {
-      showToast('請先填入 Apps Script URL');
+      showToast('請先填入 Proxy URL');
       return;
     }
-    setSheetUrl(url);
+    setNotionProxyUrl(url);
     modal.classList.remove('active');
-    showLoading('正在同步資料到 Google Sheets...');
+    showLoading('正在同步資料到 Notion...');
 
     try {
       updateSyncStatus('syncing');
-      await SheetAPI.syncAll(cards);
+      await NotionAPI.syncAll(cards);
       updateSyncStatus('connected');
-      showToast(`已成功同步 ${cards.length} 張卡片到 Google Sheets`);
+      showToast(`已成功同步 ${cards.length} 張卡片到 Notion`);
     } catch (e) {
       console.error('Sync failed:', e);
       updateSyncStatus('error');
@@ -1061,7 +1179,7 @@ function initSettings() {
 
   // Click sync status to open settings
   $('#syncStatusBtn').addEventListener('click', () => {
-    urlInput.value = getSheetUrl();
+    urlInput.value = getNotionProxyUrl();
     modal.classList.add('active');
   });
 
@@ -1186,18 +1304,65 @@ function playOrSpeak(card, defaultText, lang, btnElement) {
 // Global audio object to prevent overlapping playback
 let currentAudio = null;
 
-function playGoogleDriveAudio(url, btnElement, onErrorCallback) {
-  // Extract File ID from generic sharing link
+// Returns a Promise that resolves with a ready Audio object, or rejects on error/timeout
+function tryLoadAudio(url, timeoutMs = 4000) {
+  return new Promise((resolve, reject) => {
+    const audio = new Audio();
+    const timer = setTimeout(() => {
+      audio.src = '';
+      reject(new Error('timeout'));
+    }, timeoutMs);
+    audio.addEventListener('canplay', () => { clearTimeout(timer); resolve(audio); });
+    audio.addEventListener('error', () => { clearTimeout(timer); reject(audio.error || new Error('error')); });
+    audio.src = url;
+    audio.load();
+  });
+}
+
+async function playGoogleDriveAudio(url, btnElement, onErrorCallback) {
   const fileIdMatch = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
   if (!fileIdMatch) {
-    // Treat as direct URL if it's not a standard GD sharing link
     playDirectAudio(url, btnElement, onErrorCallback);
     return;
   }
 
   const fileId = fileIdMatch[1];
-  const directUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
-  playDirectAudio(directUrl, btnElement, onErrorCallback);
+
+  if (btnElement) btnElement.classList.add('speaking');
+  if (currentAudio) { currentAudio.pause(); currentAudio.currentTime = 0; }
+  if (window.speechSynthesis) window.speechSynthesis.cancel();
+
+  // Try multiple Drive URL formats in order:
+  const candidates = [
+    `https://docs.google.com/uc?export=download&id=${fileId}`,
+    `https://drive.google.com/uc?export=download&id=${fileId}`,
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      const audio = await tryLoadAudio(candidate, 5000);
+      currentAudio = audio;
+      audio.addEventListener('ended', () => {
+        if (btnElement) btnElement.classList.remove('speaking');
+      });
+      audio.addEventListener('error', () => {
+        if (btnElement) btnElement.classList.remove('speaking');
+        if (onErrorCallback) onErrorCallback();
+      });
+      await audio.play();
+      return; // Success
+    } catch (err) {
+      console.warn(`Failed to play ${candidate}:`, err);
+      // This candidate failed, try the next one
+    }
+  }
+
+  // All candidates failed. 
+  if (btnElement) btnElement.classList.remove('speaking');
+  showToast('Google Drive 阻擋了直接播放，為您開啟新分頁聆聽！');
+
+  // As a last fallback, open it in a new tab so they can at least hear it
+  window.open(url, '_blank');
 }
 
 function playDirectAudio(url, btnElement, onErrorCallback) {

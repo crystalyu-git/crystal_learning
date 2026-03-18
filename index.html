@@ -529,11 +529,40 @@
                         <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
                         <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
                     </svg>
-                    Google Apps Script URL
+                    Notion Proxy URL (Apps Script)
                 </label>
-                <input type="url" id="sheetUrlInput" class="form-input" placeholder="貼上你的 Apps Script Web App URL"
+                <input type="url" id="sheetUrlInput" class="form-input" placeholder="貼上您的 Apps Script Web App URL"
                     autocomplete="off">
-                <p class="settings-hint">部署 Apps Script 後產生的 URL，格式如：https://script.google.com/macros/s/xxx/exec</p>
+                <p class="settings-hint">用來與 Notion 溝通的 Proxy 網址，格式如：https://script.google.com/macros/s/xxx/exec</p>
+            </div>
+
+            <div class="settings-section">
+                <label class="form-label">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+                    </svg>
+                    外觀配色設定
+                </label>
+                <div class="color-picker-group"
+                    style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-size: 0.9rem; color: var(--text-secondary);">版面主要背景色</span>
+                        <input type="color" id="colorBgPrimary" value="#0a0a1a"
+                            style="background: transparent; border: none; width: 40px; height: 30px; cursor: pointer;">
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-size: 0.9rem; color: var(--text-secondary);">卡片正面背景色</span>
+                        <input type="color" id="colorCardFront" value="#19193c"
+                            style="background: transparent; border: none; width: 40px; height: 30px; cursor: pointer;">
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-size: 0.9rem; color: var(--text-secondary);">卡片背面背景色</span>
+                        <input type="color" id="colorCardBack" value="#0e241c"
+                            style="background: transparent; border: none; width: 40px; height: 30px; cursor: pointer;">
+                    </div>
+                </div>
+                <button class="modal-btn secondary" id="resetThemeBtn"
+                    style="margin-top: 1rem; width: 100%; border: 1px solid var(--border-light); background: var(--bg-glass);">還原預設配色</button>
             </div>
             <div class="settings-actions">
                 <button class="modal-btn cancel" id="cancelSettings">取消</button>
