@@ -20,8 +20,10 @@ const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
 // ── Notion Proxy API URL ──
+const DEFAULT_NOTION_URL = 'https://script.google.com/macros/s/AKfycbwYDvfHI5XNMhwmF8v4KC7hCOs_xHQXNjelVriO5cpWOu0lxduFcBa40Ex6-CPwWF2q/exec';
+
 function getNotionProxyUrl() {
-  return localStorage.getItem('crystal_learning_notion_url') || '';
+  return localStorage.getItem('crystal_learning_notion_url') || DEFAULT_NOTION_URL;
 }
 
 function setNotionProxyUrl(url) {
@@ -289,8 +291,10 @@ window.__ttsUtterances = window.__ttsUtterances || [];
 function speakText(text, lang = 'en-US', btnElement = null) {
   if (!text || !window.speechSynthesis) return;
 
-  // Stop any ongoing speech
-  window.speechSynthesis.cancel();
+  // Only cancel if something is actively playing. Calling cancel on an idle engine
+  // sometimes causes the next speak() to be silently dropped in Chrome.
+  const wasSpeaking = window.speechSynthesis.speaking || window.speechSynthesis.pending;
+  if (wasSpeaking) window.speechSynthesis.cancel();
 
   const utterance = new SpeechSynthesisUtterance(text);
 
@@ -355,9 +359,12 @@ function speakText(text, lang = 'en-US', btnElement = null) {
     };
   }
 
-  // Play immediately (must be synchronous for the very first interaction)
-  window.speechSynthesis.speak(utterance);
-  console.log(`[TTS] Speaking: "${text}"`);
+  // Play: use a delay if we had to cancel first, otherwise play immediately
+  const delay = wasSpeaking ? 200 : 0;
+  setTimeout(() => {
+    window.speechSynthesis.speak(utterance);
+    console.log(`[TTS] Speaking: "${text}"`);
+  }, delay);
 }
 
 // Preload voices (some browsers load them async)
@@ -1330,7 +1337,6 @@ async function playGoogleDriveAudio(url, btnElement, onErrorCallback) {
 
   if (btnElement) btnElement.classList.add('speaking');
   if (currentAudio) { currentAudio.pause(); currentAudio.currentTime = 0; }
-  if (window.speechSynthesis) window.speechSynthesis.cancel();
 
   // Try multiple Drive URL formats in order:
   const candidates = [
@@ -1370,8 +1376,6 @@ function playDirectAudio(url, btnElement, onErrorCallback) {
     currentAudio.pause();
     currentAudio.currentTime = 0;
   }
-
-  if (window.speechSynthesis) window.speechSynthesis.cancel();
 
   if (btnElement) btnElement.classList.add('speaking');
 
