@@ -729,6 +729,9 @@ function initAddForm() {
 
     // Reset form
     $('#addForm').reset();
+    // Restore last-used language (form reset reverts to HTML default)
+    const lastLang = localStorage.getItem('crystal_last_lang');
+    if (lastLang && $('#inputLang')) $('#inputLang').value = lastLang;
     // Also clear status texts
     const addStatus = $('#addAudioStatus');
     if (addStatus) { addStatus.style.display = 'none'; addStatus.textContent = ''; }
