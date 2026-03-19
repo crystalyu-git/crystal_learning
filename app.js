@@ -132,11 +132,14 @@ const NotionAPI = {
   async saveCard(card) {
     const url = getNotionProxyUrl();
     if (!url) return;
-    await fetch(url, {
+    const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify({ action: 'save', card }),
     });
+    const json = await res.json();
+    if (!json.success) throw new Error(json.error || 'Save failed');
+    return json;
   },
 
   async deleteCard(id) {
@@ -196,8 +199,17 @@ async function syncFromNotion() {
   try {
     const notionCards = await NotionAPI.loadAll();
     if (notionCards && notionCards.length > 0) {
-      cards = notionCards;
+      // Merge: Notion is source of truth, but keep local-only cards too
+      const notionIds = new Set(notionCards.map(c => c.id));
+      const localOnlyCards = cards.filter(c => c.id && !notionIds.has(c.id));
+      cards = [...notionCards, ...localOnlyCards];
       saveCardsToLocal();
+      // Push any local-only cards to Notion
+      if (localOnlyCards.length > 0) {
+        for (const c of localOnlyCards) {
+          try { await NotionAPI.saveCard(c); } catch (e) { /* best-effort */ }
+        }
+      }
     } else if (cards.length > 0) {
       // Notion is empty but local has data — push local to Notion
       await NotionAPI.syncAll(cards);
@@ -219,6 +231,7 @@ async function saveCardToNotion(card) {
   } catch (e) {
     console.warn('Save to Notion failed:', e);
     updateSyncStatus('error');
+    showToast('⚠️ 字卡儲存失敗，請在設定點「立即同步」重試');
   }
 }
 
