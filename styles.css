@@ -726,6 +726,11 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
+  flex: 1;
+  /* fill remaining view height */
+  overflow: hidden;
+  /* keep rating buttons from being pushed off */
+  width: 100%;
 }
 
 .flashcard-container {
@@ -734,6 +739,18 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
+  flex: 1;
+  /* take remaining space */
+  overflow-y: auto;
+  /* scroll when card is taller than available area */
+  padding-bottom: 1rem;
+  /* hide scrollbar visually but keep functional */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.flashcard-container::-webkit-scrollbar {
+  display: none;
 }
 
 .flashcard {
@@ -982,10 +999,13 @@ body {
 .rating-container {
   width: 100%;
   max-width: 560px;
+  flex-shrink: 0;
+  /* never shrink, always visible at bottom */
   opacity: 0;
   transform: translateY(10px);
   pointer-events: none;
   transition: all var(--transition-normal);
+  padding-bottom: 1rem;
 }
 
 .rating-container.visible {
