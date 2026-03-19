@@ -23,6 +23,15 @@ const $$ = (sel) => document.querySelectorAll(sel);
 
 // ── Notion Proxy API URL ──
 const DEFAULT_NOTION_URL = 'https://script.google.com/macros/s/AKfycbx-QzeIkDWffA1YsVmEb13PFu3CvfyvpezaqdX3LYGRM9dvo1XbPkU2z_0DesIQtlm0nw/exec';
+// Old deprecated URL — auto-migrate if still stored on this device
+const _OLD_NOTION_URL = 'https://script.google.com/macros/s/AKfycbwYDvfHI5XNMhwmF8v4KC7hCOs_xHQXNjelVriO5cpWOu0lxduFcBa40Ex6-CPwWF2q/exec';
+(function migrateNotionUrl() {
+  const stored = localStorage.getItem('crystal_learning_notion_url');
+  // If stored value is the old URL or empty string, clear it so DEFAULT_NOTION_URL takes effect
+  if (stored === _OLD_NOTION_URL || stored === '') {
+    localStorage.removeItem('crystal_learning_notion_url');
+  }
+})();
 
 function getNotionProxyUrl() {
   return localStorage.getItem('crystal_learning_notion_url') || DEFAULT_NOTION_URL;
