@@ -13,14 +13,16 @@ let currentReviewIndex = 0;
 let reviewStats = { total: 0, correct: 0, wrong: 0 };
 let deleteTargetId = null;
 let isOnline = false;
-let currentLearningLang = localStorage.getItem('crystal_learning_lang') || 'english';
+
+// Language Filter: persisted in localStorage
+let currentLangFilter = localStorage.getItem('crystal_lang_filter') || 'all';
 
 // ── DOM Elements ──
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
 // ── Notion Proxy API URL ──
-const DEFAULT_NOTION_URL = 'https://script.google.com/macros/s/AKfycbwYDvfHI5XNMhwmF8v4KC7hCOs_xHQXNjelVriO5cpWOu0lxduFcBa40Ex6-CPwWF2q/exec';
+const DEFAULT_NOTION_URL = 'https://script.google.com/macros/s/AKfycbx-QzeIkDWffA1YsVmEb13PFu3CvfyvpezaqdX3LYGRM9dvo1XbPkU2z_0DesIQtlm0nw/exec';
 
 function getNotionProxyUrl() {
   return localStorage.getItem('crystal_learning_notion_url') || DEFAULT_NOTION_URL;
@@ -84,11 +86,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   initLibrary();
   initModal();
   initSettings();
+  initAudioActions();
+  initSmartInput();
   updateDateDisplay();
 
   // Apply language context to start
-  $('#learningLangSelect').value = currentLearningLang;
   updateLanguageContextText();
+  renderLangFilterBars();
   updateDashboard();
   updateCategoryDatalist();
 
@@ -111,6 +115,7 @@ function loadCardsFromLocal() {
 function saveCardsToLocal() {
   localStorage.setItem('crystal_learning_cards', JSON.stringify(cards));
   updateCategoryDatalist();
+  renderLangFilterBars();
 }
 
 // ── Notion Proxy API ──
@@ -152,6 +157,31 @@ const NotionAPI = {
       headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify({ action: 'sync', cards: cardsData }),
     });
+  },
+
+  async uploadAudio(base64Data, filename, mimeType, lang) {
+    const url = getNotionProxyUrl();
+    if (!url) throw new Error('No proxy URL configured');
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'uploadAudio', base64Data, filename, mimeType, lang }),
+    });
+    const json = await res.json();
+    if (!json.success) throw new Error(json.error || 'Upload failed');
+    return json.url;
+  },
+
+  async deleteAudio(fileId) {
+    const url = getNotionProxyUrl();
+    if (!url) return;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'deleteAudio', fileId }),
+    });
+    const json = await res.json();
+    return json;
   },
 };
 
@@ -204,6 +234,33 @@ async function deleteCardFromNotion(id) {
   }
 }
 
+// ── Drive Audio Helpers ──
+// Extract Google Drive fileId from a share URL
+function extractDriveFileId(url) {
+  if (!url) return null;
+  const m = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  return m ? m[1] : null;
+}
+
+// Check if any OTHER card (besides excludeId) uses the same audioUrl fileId
+function isAudioSharedWithOtherCards(fileId, excludeId) {
+  return cards.some(c => c.id !== excludeId && extractDriveFileId(c.audioUrl) === fileId);
+}
+
+async function tryDeleteDriveAudio(fileId) {
+  if (!fileId || !getNotionProxyUrl()) return;
+  try {
+    const result = await NotionAPI.deleteAudio(fileId);
+    if (result && result.success) {
+      showToast('音檔已從 Google Drive 刪除');
+    } else {
+      console.warn('[Audio Cleanup] Delete rejected (not in Crystal_Learning or error):', result);
+    }
+  } catch (e) {
+    console.warn('[Audio Cleanup] Failed to delete audio:', e);
+  }
+}
+
 function updateSyncStatus(status) {
   const dot = $('#syncDot');
   const label = $('#syncLabel');
@@ -251,37 +308,84 @@ function saveStreak(streak) {
   localStorage.setItem('crystal_learning_streak', JSON.stringify(streak));
 }
 
-// ── Language Context Helpers ──
-function initLangToggle() {
-  $('#learningLangSelect').addEventListener('change', (e) => {
-    currentLearningLang = e.target.value;
-    localStorage.setItem('crystal_learning_lang', currentLearningLang);
+// ── Language Filter System ──
+const LANG_LABELS = {
+  'en-US': 'English (美式)', 'en-GB': 'English (英式)',
+  'ja-JP': '日本語', 'zh-TW': '中文（繁體）', 'zh-CN': '中文（簡體）',
+  'ko-KR': '한국어', 'fr-FR': 'Français', 'de-DE': 'Deutsch',
+  'es-ES': 'Español', 'th-TH': 'ภาษาไทย', 'vi-VN': 'Tiếng Việt',
+};
 
-    updateLanguageContextText();
-
-    // Refresh currently active views immediately
-    if ($('#dashboardView').classList.contains('active')) updateDashboard();
-    if ($('#reviewView').classList.contains('active')) startReviewSession();
-    if ($('#libraryView').classList.contains('active')) renderLibrary();
-  });
+function getLangLabel(lang) {
+  return LANG_LABELS[lang] || lang;
 }
 
-function updateLanguageContextText() {
-  const isEnglish = currentLearningLang === 'english';
-  $('#dashboardTitle').textContent = `歡迎回來 ✨ - ${isEnglish ? '英文' : '日文'}學習`;
-  $('#reviewTitle').textContent = `複習卡片 📖 - ${isEnglish ? '英文' : '日文'}`;
-  $('#inputLang').value = isEnglish ? 'en-US' : 'ja-JP';
+function getAvailableLangs() {
+  const seen = new Set();
+  cards.forEach(c => { if (c.lang) seen.add(c.lang); });
+  return [...seen].sort();
+}
+
+function setLangFilter(lang) {
+  currentLangFilter = lang;
+  localStorage.setItem('crystal_lang_filter', lang);
+  renderLangFilterBars();
+  // Refresh all active views
+  if ($('#dashboardView').classList.contains('active')) updateDashboard();
+  if ($('#reviewView').classList.contains('active')) startReviewSession();
+  if ($('#libraryView').classList.contains('active')) renderLibrary();
+}
+
+function renderLangFilterBars() {
+  const containers = ['langFilterDashboard', 'langFilterReview', 'langFilterLibrary'];
+  const langs = getAvailableLangs();
+  const showBar = langs.length > 1;
+
+  containers.forEach(id => {
+    const el = $(`#${id}`);
+    if (!el) return;
+
+    if (!showBar) { el.style.display = 'none'; return; }
+    el.style.display = 'flex';
+
+    el.innerHTML = '';
+    const allBtn = document.createElement('button');
+    allBtn.className = 'lang-btn' + (currentLangFilter === 'all' ? ' active' : '');
+    allBtn.textContent = '全部';
+    allBtn.addEventListener('click', () => setLangFilter('all'));
+    el.appendChild(allBtn);
+
+    langs.forEach(lang => {
+      const btn = document.createElement('button');
+      btn.className = 'lang-btn' + (currentLangFilter === lang ? ' active' : '');
+      btn.textContent = getLangLabel(lang);
+      btn.addEventListener('click', () => setLangFilter(lang));
+      el.appendChild(btn);
+    });
+  });
 }
 
 function getCardsByLang() {
-  return cards.filter(c => {
-    if (currentLearningLang === 'english') {
-      return c.lang === 'en-US' || c.lang === 'en-GB';
-    } else if (currentLearningLang === 'japanese') {
-      return c.lang === 'ja-JP';
-    }
-    return true; // fallback
-  });
+  if (currentLangFilter === 'all') return cards;
+  return cards.filter(c => c.lang === currentLangFilter);
+}
+
+function initLangToggle() {
+  // Deprecated toggle no longer used; renderLangFilterBars handles this now
+}
+
+function updateLanguageContextText() {
+  // Default add-card lang: restore from localStorage
+  const lastLang = localStorage.getItem('crystal_last_lang');
+  if (lastLang && $('#inputLang')) {
+    $('#inputLang').value = lastLang;
+  }
+  // Bind change to save preference
+  if ($('#inputLang')) {
+    $('#inputLang').addEventListener('change', (e) => {
+      localStorage.setItem('crystal_last_lang', e.target.value);
+    });
+  }
 }
 
 // ── Text-to-Speech (TTS) ──
@@ -615,6 +719,12 @@ function initAddForm() {
 
     // Reset form
     $('#addForm').reset();
+    // Also clear status texts
+    const addStatus = $('#addAudioStatus');
+    if (addStatus) { addStatus.style.display = 'none'; addStatus.textContent = ''; }
+
+    const translateStatus = $('#translateStatus');
+    if (translateStatus) { translateStatus.style.display = 'none'; translateStatus.textContent = ''; }
     $('#inputWord').focus();
     updateCategoryDatalist();
 
@@ -999,9 +1109,18 @@ function renderLibrary() {
   });
 }
 
+// Tracks the old audio URL when the user opens the edit modal
+let editOldAudioUrl = null;
+// Tracks a new audio URL that was uploaded during this edit session (to prompt old-file cleanup on save)
+let pendingOldAudioFileIdForEdit = null;
+
 function openEditModal(id) {
   const card = cards.find(c => c.id === id);
   if (!card) return;
+
+  // Reset pending state
+  editOldAudioUrl = card.audioUrl || '';
+  pendingOldAudioFileIdForEdit = null;
 
   $('#editCardId').value = card.id;
   $('#editWord').value = card.word || '';
@@ -1011,6 +1130,10 @@ function openEditModal(id) {
   $('#editCategory').value = card.category || '';
   $('#editAudioUrl').value = card.audioUrl || '';
   $('#editLang').value = card.lang || 'en-US';
+
+  // Reset edit status UI
+  const statusEl = $('#editAudioStatus');
+  if (statusEl) { statusEl.style.display = 'none'; statusEl.textContent = ''; }
 
   $('#editModal').classList.add('active');
 }
@@ -1043,12 +1166,26 @@ function initModal() {
 
   $('#confirmDelete').addEventListener('click', async () => {
     if (deleteTargetId) {
+      // Find the card before removing it so we can check its audioUrl
+      const deletedCard = cards.find(c => c.id === deleteTargetId);
       cards = cards.filter(c => c.id !== deleteTargetId);
       saveCardsToLocal();
       renderLibrary();
       showToast('卡片已刪除');
-      // Sync deletion to Notion
       deleteCardFromNotion(deleteTargetId);
+
+      // Offer to delete Drive audio if applicable
+      if (deletedCard && deletedCard.audioUrl) {
+        const fileId = extractDriveFileId(deletedCard.audioUrl);
+        if (fileId && !isAudioSharedWithOtherCards(fileId, deleteTargetId)) {
+          // Small delay so the delete modal closes first
+          setTimeout(() => {
+            if (confirm('是否一起從 Google Drive 刪除這張卡片的音檔？\n（僅會刪除由本系統上傳的檔案）')) {
+              tryDeleteDriveAudio(fileId);
+            }
+          }, 300);
+        }
+      }
     }
     $('#deleteModal').classList.remove('active');
     deleteTargetId = null;
@@ -1067,26 +1204,38 @@ function initModal() {
     $('#editModal').classList.remove('active');
   });
 
-  $('#editForm').addEventListener('submit', (e) => {
+  $('#editForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const id = $('#editCardId').value;
     const card = cards.find(c => c.id === id);
     if (!card) return;
+
+    const newAudioUrl = $('#editAudioUrl').value.trim();
+    const oldFileId = extractDriveFileId(editOldAudioUrl);
+    const newFileId = extractDriveFileId(newAudioUrl);
 
     card.word = $('#editWord').value.trim();
     card.pronunciation = $('#editPronunciation').value.trim();
     card.meaning = $('#editMeaning').value.trim();
     card.example = $('#editExample').value.trim();
     card.category = $('#editCategory').value.trim();
-    card.audioUrl = $('#editAudioUrl').value.trim();
+    card.audioUrl = newAudioUrl;
     card.lang = $('#editLang').value;
 
     saveCardsToLocal();
     renderLibrary();
     showToast('卡片已更新');
     saveCardToNotion(card);
-
     $('#editModal').classList.remove('active');
+
+    // Offer to delete old Drive audio if it changed and old file is from our system
+    if (oldFileId && oldFileId !== newFileId && !isAudioSharedWithOtherCards(oldFileId, id)) {
+      setTimeout(() => {
+        if (confirm('舊音源是否一起從 Google Drive 刪除？\n（僅會刪除由本系統上傳的檔案）')) {
+          tryDeleteDriveAudio(oldFileId);
+        }
+      }, 300);
+    }
   });
 
   // Close on overlay click (Edit Modal)
@@ -1308,6 +1457,108 @@ function playOrSpeak(card, defaultText, lang, btnElement) {
   }
 }
 
+// ── Audio Upload & Recording ──
+async function uploadAudioToDrive(blob, filename, lang, statusEl, targetInput) {
+  if (!statusEl || !targetInput) return;
+  statusEl.className = 'audio-status uploading';
+  statusEl.textContent = '⏳ 上傳中，請稍候...';
+  statusEl.style.display = 'block';
+
+  try {
+    const base64Data = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+
+    const shareUrl = await NotionAPI.uploadAudio(base64Data, filename, blob.type, lang);
+    targetInput.value = shareUrl;
+    statusEl.className = 'audio-status success';
+    statusEl.textContent = `✅ 音檔上傳成功！(${lang || 'other'})`;
+    showToast('音檔上傳成功！');
+  } catch (e) {
+    console.error('Audio upload failed:', e);
+    statusEl.className = 'audio-status error';
+    statusEl.textContent = '❌ 上傳失敗：' + e.message;
+    showToast('音檔上傳失敗：' + e.message);
+  }
+}
+
+function initAudioActions() {
+  // Helper to bind both Add and Edit forms
+  const bindAudioButtons = (uploadBtnId, recordBtnId, fileInputId, statusId, audioUrlInputId, langSelectId) => {
+    const uploadBtn = $(`#${uploadBtnId}`);
+    const recordBtn = $(`#${recordBtnId}`);
+    const fileInput = $(`#${fileInputId}`);
+    const statusEl = $(`#${statusId}`);
+    const urlInput = $(`#${audioUrlInputId}`);
+    const getLang = () => ($(`#${langSelectId}`) ? $(`#${langSelectId}`).value : 'other');
+
+    if (!uploadBtn || !recordBtn || !fileInput) return;
+
+    // ── Upload from file ──
+    uploadBtn.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', async () => {
+      const file = fileInput.files[0];
+      if (!file) return;
+      await uploadAudioToDrive(file, file.name, getLang(), statusEl, urlInput);
+      fileInput.value = ''; // Reset so same file can be chosen again
+    });
+
+    // ── Record from microphone ──
+    let mediaRecorder = null;
+    let recordedChunks = [];
+
+    recordBtn.addEventListener('click', async () => {
+      if (mediaRecorder && mediaRecorder.state === 'recording') {
+        // Stop recording
+        mediaRecorder.stop();
+        return;
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        recordedChunks = [];
+        mediaRecorder = new MediaRecorder(stream);
+
+        mediaRecorder.addEventListener('dataavailable', e => {
+          if (e.data.size > 0) recordedChunks.push(e.data);
+        });
+
+        mediaRecorder.addEventListener('stop', async () => {
+          // Stop all tracks to release microphone
+          stream.getTracks().forEach(t => t.stop());
+          recordBtn.textContent = '🎙️ 錄音';
+          recordBtn.classList.remove('recording');
+
+          const mimeType = mediaRecorder.mimeType || 'audio/webm';
+          const blob = new Blob(recordedChunks, { type: mimeType });
+          const ext = mimeType.includes('ogg') ? 'ogg' : mimeType.includes('mp4') ? 'mp4' : 'webm';
+          const filename = `recording_${Date.now()}.${ext}`;
+          await uploadAudioToDrive(blob, filename, getLang(), statusEl, urlInput);
+        });
+
+        mediaRecorder.start();
+        recordBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg> 停止錄音`;
+        recordBtn.classList.add('recording');
+
+        if (statusEl) {
+          statusEl.className = 'audio-status';
+          statusEl.textContent = '🔴 錄音中...';
+          statusEl.style.display = 'block';
+        }
+      } catch (e) {
+        console.error('Microphone access error:', e);
+        showToast('無法存取麥克風，請確認瀏覽器權限');
+      }
+    });
+  };
+
+  bindAudioButtons('addUploadAudioBtn', 'addRecordAudioBtn', 'addAudioFileInput', 'addAudioStatus', 'inputAudioUrl', 'inputLang');
+  bindAudioButtons('editUploadAudioBtn', 'editRecordAudioBtn', 'editAudioFileInput', 'editAudioStatus', 'editAudioUrl', 'editLang');
+}
+
 // Global audio object to prevent overlapping playback
 let currentAudio = null;
 
@@ -1395,5 +1646,156 @@ function playDirectAudio(url, btnElement, onErrorCallback) {
     console.warn("Audio play blocked or failed:", e);
     if (btnElement) btnElement.classList.remove('speaking');
     if (onErrorCallback) onErrorCallback();
+  });
+}
+
+// ── Auto-Translate & OCR Smart Input ──
+
+// Map card lang to MyMemory language code
+const MYMEMORY_LANG_MAP = {
+  'en-US': 'en', 'en-GB': 'en', 'ja-JP': 'ja', 'zh-TW': 'zh-TW',
+  'zh-CN': 'zh-CN', 'ko-KR': 'ko', 'fr-FR': 'fr', 'de-DE': 'de',
+  'es-ES': 'es', 'it-IT': 'it', 'pt-BR': 'pt', 'th-TH': 'th', 'vi-VN': 'vi',
+};
+
+// Map card lang to Tesseract language code
+const TESSERACT_LANG_MAP = {
+  'en-US': 'eng', 'en-GB': 'eng', 'ja-JP': 'jpn', 'zh-TW': 'chi_tra',
+  'zh-CN': 'chi_sim', 'ko-KR': 'kor', 'fr-FR': 'fra', 'de-DE': 'deu',
+  'es-ES': 'spa', 'it-IT': 'ita', 'pt-BR': 'por', 'th-TH': 'tha', 'vi-VN': 'vie',
+};
+
+async function autoTranslate(word, fromLang, statusEl) {
+  if (!word) return;
+  const from = MYMEMORY_LANG_MAP[fromLang] || 'en';
+  const to = 'zh-TW';
+
+  statusEl.style.display = 'block';
+  statusEl.textContent = '翻譯中...';
+  statusEl.className = 'audio-status';
+
+  try {
+    const res = await fetch(
+      `https://api.mymemory.translated.net/get?q=${encodeURIComponent(word)}&langpair=${from}|${to}`
+    );
+    const data = await res.json();
+    const translated = data?.responseData?.translatedText;
+
+    if (translated && translated !== word) {
+      $('#inputMeaning').value = translated;
+      statusEl.textContent = `✅ 已自動翻譯`;
+    } else {
+      statusEl.textContent = '⚠️ 無法翻譯，請手動填寫';
+    }
+  } catch (e) {
+    statusEl.textContent = '⚠️ 翻譯服務無法連線';
+  }
+}
+
+async function runOCR(imageFile, lang) {
+  const tesseractLang = TESSERACT_LANG_MAP[lang] || 'eng';
+
+  const overlay = $('#ocrOverlay');
+  const wordList = $('#ocrWordList');
+  const fullText = $('#ocrFullText');
+
+  overlay.style.display = 'flex';
+  wordList.innerHTML = '<span style="color:var(--text-muted);font-size:0.85rem">載入語言包並辨識中，請稍候...</span>';
+  fullText.textContent = '';
+
+  try {
+    const { data } = await Tesseract.recognize(imageFile, tesseractLang, {
+      logger: m => {
+        if (m.status === 'recognizing text') {
+          wordList.innerHTML = `<span style="color:var(--text-muted);font-size:0.85rem">辨識中... ${Math.round(m.progress * 100)}%</span>`;
+        }
+      }
+    });
+
+    const text = data.text.trim();
+    fullText.textContent = text || '(未辨識到文字)';
+
+    // Split into word/phrase candidates
+    // For CJK: split by spaces and newlines and punctuation
+    // For Latin: split by spaces
+    const isCJK = ['jpn', 'chi_tra', 'chi_sim', 'kor'].includes(tesseractLang);
+    let candidates;
+    if (isCJK) {
+      candidates = text.split(/[\s\n、。！？「」『』\.,;:!?]+/).filter(w => w.length > 0);
+    } else {
+      candidates = text.split(/\s+/).filter(w => w.length > 1);
+    }
+
+    // Deduplicate
+    const unique = [...new Set(candidates)];
+
+    wordList.innerHTML = '';
+
+    // If only one token, auto-fill
+    if (unique.length === 1) {
+      $('#inputWord').value = unique[0];
+      overlay.style.display = 'none';
+      showToast(`已自動代入：${unique[0]}`);
+      return;
+    }
+
+    if (unique.length === 0) {
+      wordList.innerHTML = '<span style="color:var(--text-muted);font-size:0.85rem">未辨識到文字，請嘗試更清晰的照片</span>';
+      return;
+    }
+
+    // Show selectable chips
+    unique.forEach(word => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'lang-btn';
+      chip.style.cssText = 'font-size:0.9rem;padding:0.4rem 0.8rem';
+      chip.textContent = word;
+      chip.addEventListener('click', () => {
+        $('#inputWord').value = word;
+        overlay.style.display = 'none';
+      });
+      wordList.appendChild(chip);
+    });
+
+  } catch (e) {
+    console.error('[OCR]', e);
+    wordList.innerHTML = '<span style="color:var(--text-muted);font-size:0.85rem">辨識失敗，請再試</span>';
+  }
+}
+
+function initSmartInput() {
+  // ─ Translate button ─
+  const translateBtn = $('#autoTranslateBtn');
+  const translateStatus = $('#translateStatus');
+  if (translateBtn) {
+    translateBtn.addEventListener('click', async () => {
+      const word = $('#inputWord').value.trim();
+      if (!word) { showToast('請先填寫生字'); return; }
+      const lang = $('#inputLang').value;
+      await autoTranslate(word, lang, translateStatus);
+    });
+  }
+
+  // ─ Photo / OCR button ─
+  const ocrBtn = $('#ocrPhotoBtn');
+  const ocrInput = $('#ocrImageInput');
+  if (ocrBtn && ocrInput) {
+    ocrBtn.addEventListener('click', () => ocrInput.click());
+    ocrInput.addEventListener('change', async () => {
+      const file = ocrInput.files[0];
+      if (!file) return;
+      const lang = $('#inputLang').value;
+      await runOCR(file, lang);
+      ocrInput.value = '';
+    });
+  }
+
+  // ─ OCR overlay close ─
+  $('#ocrOverlayClose')?.addEventListener('click', () => {
+    $('#ocrOverlay').style.display = 'none';
+  });
+  $('#ocrOverlay')?.addEventListener('click', (e) => {
+    if (e.target === $('#ocrOverlay')) $('#ocrOverlay').style.display = 'none';
   });
 }

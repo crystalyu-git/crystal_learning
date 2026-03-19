@@ -83,6 +83,10 @@ function doPost(e) {
                 return deleteCard(body.id);
             case 'sync':
                 return syncAll(body.cards);
+            case 'uploadAudio':
+                return uploadAudio(body.base64Data, body.filename, body.mimeType, body.lang);
+            case 'deleteAudio':
+                return deleteAudio(body.fileId);
             default:
                 return jsonResponse({ success: false, error: 'Unknown action: ' + action });
         }
@@ -216,6 +220,87 @@ function deleteCard(appCardId) {
         }
     }
     return jsonResponse({ success: true });
+}
+
+// 上傳音檔到 Google Drive
+function uploadAudio(base64Data, filename, mimeType, lang) {
+    try {
+        const FOLDER_NAME = 'Crystal_Learning';
+
+        // 找到或建立 Crystal_Learning 資料夾
+        let rootFolder;
+        const rootFolders = DriveApp.getFoldersByName(FOLDER_NAME);
+        if (rootFolders.hasNext()) {
+            rootFolder = rootFolders.next();
+        } else {
+            rootFolder = DriveApp.createFolder(FOLDER_NAME);
+        }
+
+        // 找到或建立語系子資料夾 (e.g. Crystal_Learning/ja-JP/)
+        const subFolderName = lang || 'other';
+        let subFolder;
+        const subFolders = rootFolder.getFoldersByName(subFolderName);
+        if (subFolders.hasNext()) {
+            subFolder = subFolders.next();
+        } else {
+            subFolder = rootFolder.createFolder(subFolderName);
+        }
+
+        const decoded = Utilities.base64Decode(base64Data);
+        const blob = Utilities.newBlob(decoded, mimeType || 'audio/webm', filename);
+
+        // 存入語系子資料夾
+        const file = subFolder.createFile(blob);
+
+        // 設定分享權限為「知道連結的人可以查看」
+        file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+        const fileId = file.getId();
+        const shareUrl = `https://drive.google.com/file/d/${fileId}/view`;
+
+        return jsonResponse({ success: true, url: shareUrl, fileId: fileId });
+    } catch (error) {
+        return jsonResponse({ success: false, error: 'Upload error: ' + error.toString() });
+    }
+}
+
+// Google Drive 音檔刪除（只刪 Crystal_Learning 資料夾內的檔案）
+function deleteAudio(fileId) {
+    try {
+        if (!fileId) return jsonResponse({ success: false, error: 'Missing fileId' });
+
+        const file = DriveApp.getFileById(fileId);
+        const parents = file.getParents();
+
+        // 確認檔案在 Crystal_Learning 資料夾內（含子資料夾）
+        let isOurs = false;
+        while (parents.hasNext()) {
+            const parent = parents.next();
+            const grandParents = parent.getParents();
+            const parentName = parent.getName();
+            if (parentName === 'Crystal_Learning') {
+                isOurs = true;
+                break;
+            }
+            // 也確認父資料夾的父資料夾（語系子資料夾的情況）
+            while (grandParents.hasNext()) {
+                if (grandParents.next().getName() === 'Crystal_Learning') {
+                    isOurs = true;
+                    break;
+                }
+            }
+            if (isOurs) break;
+        }
+
+        if (!isOurs) {
+            return jsonResponse({ success: false, error: 'File is not in Crystal_Learning folder' });
+        }
+
+        file.setTrashed(true);
+        return jsonResponse({ success: true });
+    } catch (error) {
+        return jsonResponse({ success: false, error: 'Delete error: ' + error.toString() });
+    }
 }
 
 // 批次同步所有卡片（因為 Notion API 限制，我們只能逐條處理，這可能會花很多時間並遇到 Rate Limit）
