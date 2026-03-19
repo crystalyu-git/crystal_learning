@@ -427,25 +427,12 @@ function buildNotionProperties(card) {
     props.meaning = { rich_text: richText(card.meaning || '') };
     props.example = { rich_text: richText(card.example || '') };
 
-    // 3. URLs
-    if (card.audioUrl) {
-        props.audioUrl = { url: card.audioUrl };
-    } else {
-        props.audioUrl = null; // Notion API 規範：清空欄位請直接給 null
-    }
+    // 3. URLs — Notion 規格：清空 URL 屬性必須用 { url: null }，不能直接給 null
+    props.audioUrl = card.audioUrl ? { url: card.audioUrl } : { url: null };
 
-    // 4. Selects (category, lang)
-    if (card.category) {
-        props.category = { select: { name: card.category } };
-    } else {
-        props.category = null;
-    }
-
-    if (card.lang) {
-        props.lang = { select: { name: card.lang } };
-    } else {
-        props.lang = null;
-    }
+    // 4. Selects — Notion 規格：清空 Select 屬性必須用 { select: null }，不能直接給 null
+    props.category = card.category ? { select: { name: card.category } } : { select: null };
+    props.lang = card.lang ? { select: { name: card.lang } } : { select: null };
 
     // 5. Numbers
     props.level = { number: Number(card.level) || 0 };

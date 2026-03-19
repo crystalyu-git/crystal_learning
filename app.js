@@ -1212,6 +1212,8 @@ function initModal() {
   // Edit Modal Event Listeners
   $('#cancelEdit').addEventListener('click', () => {
     $('#editModal').classList.remove('active');
+    const ets = $('#editTranslateStatus');
+    if (ets) { ets.style.display = 'none'; ets.textContent = ''; }
   });
 
   $('#editForm').addEventListener('submit', async (e) => {
@@ -1248,12 +1250,8 @@ function initModal() {
     }
   });
 
-  // Close on overlay click (Edit Modal)
-  $('#editModal').addEventListener('click', (e) => {
-    if (e.target === $('#editModal')) {
-      $('#editModal').classList.remove('active');
-    }
-  });
+  // ⚠️ 編輯中不開放點遮罩關閉，避免誤觸關閉視窗
+  // 使用者需透過「取消」或「儲存變更」按鈕離開
 }
 
 // ── Settings ──
@@ -1775,7 +1773,7 @@ async function runOCR(imageFile, lang) {
 }
 
 function initSmartInput() {
-  // ─ Translate button ─
+  // ─ Translate button (Add form) ─
   const translateBtn = $('#autoTranslateBtn');
   const translateStatus = $('#translateStatus');
   if (translateBtn) {
@@ -1784,6 +1782,37 @@ function initSmartInput() {
       if (!word) { showToast('請先填寫生字'); return; }
       const lang = $('#inputLang').value;
       await autoTranslate(word, lang, translateStatus);
+    });
+  }
+
+  // ─ Translate button (Edit modal) ─
+  const editTranslateBtn = $('#editAutoTranslateBtn');
+  const editTranslateStatus = $('#editTranslateStatus');
+  if (editTranslateBtn) {
+    editTranslateBtn.addEventListener('click', async () => {
+      const word = $('#editWord').value.trim();
+      if (!word) { showToast('請先填寫生字'); return; }
+      const lang = ($('#editLang') ? $('#editLang').value : null) || $('#inputLang').value;
+      const origFill = (text) => { $('#editMeaning').value = text; };
+      // 借用 autoTranslate，但 target 是 editMeaning
+      editTranslateStatus.style.display = 'block';
+      editTranslateStatus.textContent = '翻譯中...';
+      const from = MYMEMORY_LANG_MAP[lang] || 'en';
+      try {
+        const res = await fetch(
+          `https://api.mymemory.translated.net/get?q=${encodeURIComponent(word)}&langpair=${from}|zh-TW`
+        );
+        const data = await res.json();
+        const translated = data?.responseData?.translatedText;
+        if (translated && translated !== word) {
+          $('#editMeaning').value = translated;
+          editTranslateStatus.textContent = '✅ 已自動翻譯';
+        } else {
+          editTranslateStatus.textContent = '⚠️ 無法翻譯，請手動填寫';
+        }
+      } catch (e) {
+        editTranslateStatus.textContent = '⚠️ 翻譯服務無法連線';
+      }
     });
   }
 
