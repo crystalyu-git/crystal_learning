@@ -330,13 +330,23 @@ function setLangFilter(lang) {
   currentLangFilter = lang;
   localStorage.setItem('crystal_lang_filter', lang);
   renderLangFilterBars();
+  updateViewTitles();
   // Refresh all active views
   if ($('#dashboardView').classList.contains('active')) updateDashboard();
   if ($('#reviewView').classList.contains('active')) startReviewSession();
   if ($('#libraryView').classList.contains('active')) renderLibrary();
 }
 
+function updateViewTitles() {
+  const langLabel = currentLangFilter === 'all' ? '所有語系' : getLangLabel(currentLangFilter);
+  const dbTitle = $('#dashboardTitle');
+  const rvTitle = $('#reviewTitle');
+  if (dbTitle) dbTitle.textContent = `歡迎回來 ✨ - ${langLabel}學習`;
+  if (rvTitle) rvTitle.textContent = `複習卡片 📖 - ${langLabel}`;
+}
+
 function renderLangFilterBars() {
+  updateViewTitles();
   const containers = ['langFilterDashboard', 'langFilterReview', 'langFilterLibrary'];
   const langs = getAvailableLangs();
   const showBar = langs.length > 1;
