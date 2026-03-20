@@ -1833,7 +1833,7 @@ async function runOCR(imageFile, lang) {
   };
   confirmBtn.onclick = () => {
     if (selectedWords.size === 0) return;
-    $('#inputWord').value = [...selectedWords].join(' ');
+    $('#inputWord').value = [...selectedWords].join('');
     overlay.style.display = 'none';
   };
 
