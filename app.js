@@ -762,7 +762,11 @@ function initAddForm() {
     const lang = $('#inputLang').value;
     const imageUrl = _addImageUrl || '';
 
-    if (!word || !meaning) return;
+    if (!word) return;
+    if (!meaning && !imageUrl) {
+      showToast('請輸入翻譯，或上傳圖片');
+      return;
+    }
 
     const newCard = {
       id: generateId(),
@@ -1272,6 +1276,12 @@ function initModal() {
       showToast('卡片已刪除');
       deleteCardFromNotion(deleteTargetId);
 
+      // Silently delete Drive image if applicable (no confirm dialog)
+      if (deletedCard && deletedCard.imageUrl) {
+        const imgFileId = extractDriveFileId(deletedCard.imageUrl);
+        if (imgFileId) tryDeleteDriveAudio(imgFileId);
+      }
+
       // Offer to delete Drive audio if applicable
       if (deletedCard && deletedCard.audioUrl) {
         const fileId = extractDriveFileId(deletedCard.audioUrl);
@@ -1319,7 +1329,16 @@ function initModal() {
     card.meaning = $('#editMeaning').value.trim();
     card.example = $('#editExample').value.trim();
     card.category = $('#editCategory').value.trim();
-    card.imageUrl = $('#editImageUrl').value.trim() || card.imageUrl || '';
+    const newImageUrl = $('#editImageUrl').value.trim() || '';
+    const oldImageFileId = extractDriveFileId(card.imageUrl);
+    const newImageFileId = extractDriveFileId(newImageUrl);
+
+    card.imageUrl = newImageUrl !== '' ? newImageUrl : (card.imageUrl || '');
+    // Validate: meaning required unless image present
+    if (!card.meaning && !card.imageUrl) {
+      showToast('請輸入翻譯，或上傳圖片');
+      return;
+    }
     card.audioUrl = newAudioUrl;
     card.lang = $('#editLang').value;
 
@@ -1336,6 +1355,11 @@ function initModal() {
           tryDeleteDriveAudio(oldFileId);
         }
       }, 300);
+    }
+
+    // Silently delete old Drive image if it changed
+    if (oldImageFileId && oldImageFileId !== newImageFileId && !isAudioSharedWithOtherCards(oldImageFileId, id)) {
+      tryDeleteDriveAudio(oldImageFileId);
     }
   });
 
@@ -2008,7 +2032,10 @@ function initTagInput(textInputEl, chipRowEl, hiddenEl, suggestionsEl) {
     ).join('');
     suggestionsEl.style.display = 'block';
     suggestionsEl.querySelectorAll('.tag-suggestion-item').forEach(el => {
-      el.addEventListener('click', () => addTag(el.dataset.val));
+      el.addEventListener('mousedown', (e) => {
+        e.preventDefault(); // Prevent input onBlur from firing first
+        addTag(el.dataset.val);
+      });
     });
   };
 
