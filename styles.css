@@ -985,18 +985,21 @@ body {
   transition: all var(--transition-normal);
   position: relative;
   z-index: 10;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  transform: translateZ(1px);
 }
 
 .speak-btn:hover {
   background: rgba(99, 102, 241, 0.25);
   border-color: rgba(99, 102, 241, 0.5);
   color: #c7d2fe;
-  transform: scale(1.1);
+  transform: scale(1.1) translateZ(1px);
   box-shadow: 0 0 20px rgba(99, 102, 241, 0.3);
 }
 
 .speak-btn:active {
-  transform: scale(0.95);
+  transform: scale(0.95) translateZ(1px);
 }
 
 .speak-btn.back {
