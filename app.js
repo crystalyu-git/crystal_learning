@@ -1225,6 +1225,7 @@ function openEditModal(id) {
   _editTagInput?.setTags(card.category || '');
   $('#editAudioUrl').value = card.audioUrl || '';
   $('#editLang').value = card.lang || 'en-US';
+  $('#editLang').dispatchEvent(new Event('change'));
   // Populate imageUrl hidden field
   $('#editImageUrl').value = card.imageUrl || '';
   _editImageUrl = card.imageUrl || '';
@@ -2112,6 +2113,46 @@ function initSmartInput() {
     });
   }
 
+  // ─ Auto Hiragana button (Add form) ─
+  const autoHiraganaBtn = $('#autoHiraganaBtn');
+  const inputLang = $('#inputLang');
+  if (autoHiraganaBtn && inputLang) {
+    const toggleAddHiraganaBtn = () => {
+      autoHiraganaBtn.style.display = inputLang.value === 'ja-JP' ? 'inline-flex' : 'none';
+    };
+    inputLang.addEventListener('change', toggleAddHiraganaBtn);
+    toggleAddHiraganaBtn(); // init
+
+    autoHiraganaBtn.addEventListener('click', async () => {
+      const word = $('#inputWord').value.trim();
+      if (!word) { showToast('請先填寫生字'); return; }
+      autoHiraganaBtn.textContent = '轉換中...';
+      const hiragana = await fetchHiragana(word);
+      if (hiragana) $('#inputPronunciation').value = hiragana;
+      autoHiraganaBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg> 轉平假名`;
+    });
+  }
+
+  // ─ Auto Hiragana button (Edit modal) ─
+  const editAutoHiraganaBtn = $('#editAutoHiraganaBtn');
+  const editLang = $('#editLang');
+  if (editAutoHiraganaBtn && editLang) {
+    const toggleEditHiraganaBtn = () => {
+      editAutoHiraganaBtn.style.display = editLang.value === 'ja-JP' ? 'inline-flex' : 'none';
+    };
+    editLang.addEventListener('change', toggleEditHiraganaBtn);
+    toggleEditHiraganaBtn(); // init
+
+    editAutoHiraganaBtn.addEventListener('click', async () => {
+      const word = $('#editWord').value.trim();
+      if (!word) { showToast('請先填寫生字'); return; }
+      editAutoHiraganaBtn.textContent = '轉換中...';
+      const hiragana = await fetchHiragana(word);
+      if (hiragana) $('#editPronunciation').value = hiragana;
+      editAutoHiraganaBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg> 轉平假名`;
+    });
+  }
+
   // ─ Photo / OCR button (Add form - for word) ─
   const ocrBtn = $('#ocrPhotoBtn');
   const ocrInput = $('#ocrImageInput');
@@ -2178,4 +2219,28 @@ function initSmartInput() {
   _editTagInput = initTagInput(
     $('#editTagInput'), $('#editTagChips'), $('#editCategory'), $('#editTagSuggestions')
   );
+}
+
+async function fetchHiragana(text) {
+  try {
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=ja&tl=ja&dt=rm&q=${encodeURIComponent(text)}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    let romaji = '';
+    if (data && data[0]) {
+      data[0].forEach(segment => {
+        if (segment[3]) romaji += segment[3] + ' ';
+      });
+    }
+    if (!romaji) return text; // fallback
+    // remove spaces completely since Japanese doesn't use spaces generally
+    romaji = romaji.replace(/\s+/g, '').trim();
+    if (window.wanakana) {
+      return wanakana.toHiragana(romaji);
+    }
+    return romaji; // return romaji if wanakana fails to load
+  } catch (e) {
+    console.error('Hiragana fetched failed:', e);
+    return text;
+  }
 }
