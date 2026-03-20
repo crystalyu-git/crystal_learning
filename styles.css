@@ -1807,6 +1807,7 @@ body {
   cursor: pointer;
   transition: all var(--transition-fast);
   flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .audio-action-btn:hover {
