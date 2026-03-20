@@ -90,6 +90,8 @@ function doPost(e) {
                 return uploadImage(body.base64Data, body.filename, body.mimeType, body.lang);
             case 'deleteAudio':
                 return deleteAudio(body.fileId);
+            case 'ocrImage':
+                return performOCR(body.base64Data, body.mimeType);
             default:
                 return jsonResponse({ success: false, error: 'Unknown action: ' + action });
         }
@@ -291,6 +293,65 @@ function uploadAudio(base64Data, filename, mimeType, lang) {
         return jsonResponse({ success: true, url: shareUrl, fileId: fileId });
     } catch (error) {
         return jsonResponse({ success: false, error: 'Upload error: ' + error.toString() });
+    }
+}
+
+// ── Google Cloud Vision OCR ──
+// 前提：在 Google Cloud Console 中為本 Apps Script 的 GCP 專案啟用 "Cloud Vision API"
+// (Apps Script → 左側「專案設定」 → 取得 GCP 專案編號 → 到 Cloud Console 啟用 API)
+function performOCR(base64Data, mimeType) {
+    try {
+        const token = ScriptApp.getOAuthToken();
+        const apiUrl = 'https://vision.googleapis.com/v1/images:annotate';
+
+        const requestBody = {
+            requests: [{
+                image: { content: base64Data },
+                features: [{ type: 'TEXT_DETECTION', maxResults: 1 }],
+                imageContext: { languageHints: ['ja', 'ko', 'zh-TW', 'zh-CN', 'en'] }
+            }]
+        };
+
+        const response = UrlFetchApp.fetch(apiUrl, {
+            method: 'post',
+            contentType: 'application/json',
+            headers: { 'Authorization': 'Bearer ' + token },
+            payload: JSON.stringify(requestBody),
+            muteHttpExceptions: true
+        });
+
+        const json = JSON.parse(response.getContentText());
+
+        if (response.getResponseCode() !== 200) {
+            return jsonResponse({ success: false, error: 'Vision API error: ' + (json.error?.message || response.getContentText()) });
+        }
+
+        const annotations = json.responses?.[0];
+        if (!annotations || annotations.error) {
+            return jsonResponse({ success: false, error: annotations?.error?.message || 'No text detected' });
+        }
+
+        // fullTextAnnotation gives cleanest result with line breaks preserved
+        const fullText = annotations.fullTextAnnotation?.text || annotations.textAnnotations?.[0]?.description || '';
+
+        // Extract individual words/tokens from each block/paragraph/word
+        const words = [];
+        const pages = annotations.fullTextAnnotation?.pages || [];
+        pages.forEach(page => {
+            (page.blocks || []).forEach(block => {
+                (block.paragraphs || []).forEach(para => {
+                    (para.words || []).forEach(wordObj => {
+                        const word = (wordObj.symbols || []).map(s => s.text).join('');
+                        if (word.trim()) words.push(word.trim());
+                    });
+                });
+            });
+        });
+
+        return jsonResponse({ success: true, fullText: fullText.trim(), words: [...new Set(words)] });
+
+    } catch (error) {
+        return jsonResponse({ success: false, error: 'OCR error: ' + error.toString() });
     }
 }
 

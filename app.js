@@ -1790,8 +1790,6 @@ async function autoTranslate(word, fromLang, statusEl) {
 }
 
 async function runOCR(imageFile, lang) {
-  const tesseractLang = TESSERACT_LANG_MAP[lang] || 'eng';
-
   const overlay = $('#ocrOverlay');
   const wordList = $('#ocrWordList');
   const fullText = $('#ocrFullText');
@@ -1799,53 +1797,66 @@ async function runOCR(imageFile, lang) {
   let selectedWords = new Set();
 
   overlay.style.display = 'flex';
-  wordList.innerHTML = '<span style="color:var(--text-muted);font-size:0.85rem">載入語言包並辨識中，請稍候...</span>';
+  wordList.innerHTML = '<span style="color:var(--text-muted);font-size:0.85rem">🔍 傳送至 Google Vision 辨識中...</span>';
   fullText.textContent = '';
-  confirmBtn.textContent = '\u2705 確認填入（0 個字詞）';
+  confirmBtn.textContent = '✅ 確認填入（0 個字詞）';
   confirmBtn.disabled = true;
 
-  // Helper: sync confirm button state
   const syncConfirmBtn = () => {
     const n = selectedWords.size;
     confirmBtn.disabled = n === 0;
-    confirmBtn.textContent = `\u2705 確認填入（${n} 個字詞）`;
+    confirmBtn.textContent = `✅ 確認填入（${n} 個字詞）`;
   };
-
-  // Confirm handler
-  const onConfirm = () => {
+  confirmBtn.onclick = () => {
     if (selectedWords.size === 0) return;
     $('#inputWord').value = [...selectedWords].join(' ');
     overlay.style.display = 'none';
   };
-  confirmBtn.onclick = onConfirm;
 
   try {
-    const { data } = await Tesseract.recognize(imageFile, tesseractLang, {
-      logger: m => {
-        if (m.status === 'recognizing text') {
-          wordList.innerHTML = `<span style="color:var(--text-muted);font-size:0.85rem">辨識中... ${Math.round(m.progress * 100)}%</span>`;
-        }
-      }
-    });
+    const proxyUrl = getNotionProxyUrl();
+    if (!proxyUrl) {
+      throw new Error('請先在設定中填入 Proxy URL');
+    }
 
-    const text = data.text.trim();
+    // Compress image to ≤ 1MB before sending (Cloud Vision limit)
+    wordList.innerHTML = '<span style="color:var(--text-muted);font-size:0.85rem">🖼️ 壓縮圖片中...</span>';
+    const compressed = await compressImage(imageFile, 800); // 800KB safe margin
+    if (!compressed) throw new Error('圖片壓縮失敗');
+
+    wordList.innerHTML = '<span style="color:var(--text-muted);font-size:0.85rem">🔍 Google Vision 辨識中...</span>';
+
+    const res = await fetch(proxyUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({
+        action: 'ocrImage',
+        base64Data: compressed.base64,
+        mimeType: compressed.mimeType,
+      }),
+    });
+    const json = await res.json();
+
+    if (!json.success) {
+      throw new Error(json.error || 'OCR 失敗');
+    }
+
+    const text = json.fullText || '';
     fullText.textContent = text || '(未辨識到文字)';
 
-    const isCJK = ['jpn', 'chi_tra', 'chi_sim', 'kor'].includes(tesseractLang);
-    let candidates;
-    if (isCJK) {
-      candidates = text.split(/[\s\n、。！？「」『』\.,;:!?]+/).filter(w => w.length > 0);
-    } else {
-      candidates = text.split(/\s+/).filter(w => w.length > 1);
-    }
-    const unique = [...new Set(candidates)];
+    const words = json.words || [];
 
     wordList.innerHTML = '';
 
-    if (unique.length === 0) {
+    if (words.length === 0 && !text) {
       wordList.innerHTML = '<span style="color:var(--text-muted);font-size:0.85rem">未辨識到文字，請嘗試更清晰的照片</span>';
       return;
     }
+
+    // If no word tokens, split full text into candidates
+    const candidates = words.length > 0 ? words :
+      text.split(/\s+/).filter(w => w.length > 0);
+    const unique = [...new Set(candidates)].slice(0, 30); // cap at 30 chips
 
     // Show multi-select chips
     unique.forEach(word => {
@@ -1874,9 +1885,11 @@ async function runOCR(imageFile, lang) {
 
   } catch (e) {
     console.error('[OCR]', e);
-    wordList.innerHTML = '<span style="color:var(--text-muted);font-size:0.85rem">辨識失敗，請再試</span>';
+    wordList.innerHTML = `<span style="color:var(--text-muted);font-size:0.85rem">⚠️ ${e.message || '辨識失敗，請重試'}</span>`;
   }
 }
+
+
 
 // ── Image compression (client-side, max maxKB) ──
 function compressImage(file, maxKB = 50) {
