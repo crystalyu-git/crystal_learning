@@ -442,6 +442,7 @@ function updateLanguageContextText() {
   const lastLang = localStorage.getItem('crystal_last_lang');
   if (lastLang && $('#inputLang')) {
     $('#inputLang').value = lastLang;
+    $('#inputLang').dispatchEvent(new Event('change'));
   }
   // Bind change to save preference
   if ($('#inputLang')) {
@@ -792,7 +793,10 @@ function initAddForm() {
     $('#addForm').reset();
     // Restore last-used language (form reset reverts to HTML default)
     const lastLang = localStorage.getItem('crystal_last_lang');
-    if (lastLang && $('#inputLang')) $('#inputLang').value = lastLang;
+    if (lastLang && $('#inputLang')) {
+      $('#inputLang').value = lastLang;
+      $('#inputLang').dispatchEvent(new Event('change'));
+    }
     // Also clear status texts
     const addStatus = $('#addAudioStatus');
     if (addStatus) { addStatus.style.display = 'none'; addStatus.textContent = ''; }
