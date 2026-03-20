@@ -1987,7 +1987,8 @@ body {
   }
 
   .flashcard {
-    height: 260px;
+    min-height: 260px;
+    height: auto;
   }
 
   .card-word {
