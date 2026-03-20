@@ -518,7 +518,8 @@ function generateId() {
 // ── Date Helpers ──
 function getToday() {
   const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  // ⚠️ Use UTC so all devices (regardless of timezone) compare against the same midnight
+  return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
 }
 
 function formatDate(timestamp) {
