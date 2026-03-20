@@ -2235,6 +2235,14 @@ async function fetchHiragana(text) {
     if (!romaji) return text; // fallback
     // remove spaces completely since Japanese doesn't use spaces generally
     romaji = romaji.replace(/\s+/g, '').trim();
+
+    // Convert macrons to standard romaji vowels so wanakana can process them
+    romaji = romaji.replace(/[āĀ]/g, 'aa')
+      .replace(/[īĪ]/g, 'ii')
+      .replace(/[ūŪ]/g, 'uu')
+      .replace(/[ēĒ]/g, 'ee')
+      .replace(/[ōŌ]/g, 'ou');
+
     if (window.wanakana) {
       return wanakana.toHiragana(romaji);
     }
