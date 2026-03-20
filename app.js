@@ -760,6 +760,7 @@ function initAddForm() {
     const category = $('#inputCategory').value.trim();
     const audioUrl = $('#inputAudioUrl').value.trim();
     const lang = $('#inputLang').value;
+    const imageUrl = _addImageUrl || '';
 
     if (!word || !meaning) return;
 
@@ -771,12 +772,14 @@ function initAddForm() {
       example,
       category,
       audioUrl,
+      imageUrl,
       lang,
       level: 0,
       nextReview: getToday(),
       createdAt: Date.now(),
       reviewCount: 0,
     };
+    _addImageUrl = ''; // reset after use
 
     cards.push(newCard);
     saveCardsToLocal();
@@ -792,6 +795,10 @@ function initAddForm() {
 
     const translateStatus = $('#translateStatus');
     if (translateStatus) { translateStatus.style.display = 'none'; translateStatus.textContent = ''; }
+    const imgStatus = $('#meaningImageStatus');
+    if (imgStatus) { imgStatus.style.display = 'none'; imgStatus.textContent = ''; }
+    _addImageUrl = '';
+    _addTagInput?.setTags('');
     $('#inputWord').focus();
     updateCategoryDatalist();
 
@@ -957,6 +964,23 @@ function showCurrentCard() {
 
   // Update schedule hints
   updateScheduleHints(card);
+
+  // Show card image if present
+  const cardImg = $('#cardImage');
+  if (cardImg) {
+    if (card.imageUrl) {
+      // Convert Google Drive share URL to direct embed URL
+      const driveMatch = card.imageUrl.match(/\/file\/d\/([^/]+)/);
+      const embedUrl = driveMatch
+        ? `https://lh3.googleusercontent.com/d/${driveMatch[1]}`
+        : card.imageUrl;
+      cardImg.src = embedUrl;
+      cardImg.style.display = 'block';
+    } else {
+      cardImg.style.display = 'none';
+      cardImg.src = '';
+    }
+  }
 }
 
 function updateScheduleHints(card) {
@@ -1193,13 +1217,21 @@ function openEditModal(id) {
   $('#editPronunciation').value = card.pronunciation || '';
   $('#editMeaning').value = card.meaning || '';
   $('#editExample').value = card.example || '';
-  $('#editCategory').value = card.category || '';
+  // Use tag-input to populate category chips
+  _editTagInput?.setTags(card.category || '');
   $('#editAudioUrl').value = card.audioUrl || '';
   $('#editLang').value = card.lang || 'en-US';
+  // Populate imageUrl hidden field
+  $('#editImageUrl').value = card.imageUrl || '';
+  _editImageUrl = card.imageUrl || '';
 
   // Reset edit status UI
   const statusEl = $('#editAudioStatus');
   if (statusEl) { statusEl.style.display = 'none'; statusEl.textContent = ''; }
+  const imgStatusEl = $('#editMeaningImageStatus');
+  if (imgStatusEl) { imgStatusEl.style.display = 'none'; imgStatusEl.textContent = _editImageUrl ? '✅ 已有圖片' : ''; }
+  const editTransStatusEl = $('#editTranslateStatus');
+  if (editTransStatusEl) { editTransStatusEl.style.display = 'none'; editTransStatusEl.textContent = ''; }
 
   $('#editModal').classList.add('active');
 }
@@ -1287,6 +1319,7 @@ function initModal() {
     card.meaning = $('#editMeaning').value.trim();
     card.example = $('#editExample').value.trim();
     card.category = $('#editCategory').value.trim();
+    card.imageUrl = $('#editImageUrl').value.trim() || card.imageUrl || '';
     card.audioUrl = newAudioUrl;
     card.lang = $('#editLang').value;
 
@@ -1762,10 +1795,29 @@ async function runOCR(imageFile, lang) {
   const overlay = $('#ocrOverlay');
   const wordList = $('#ocrWordList');
   const fullText = $('#ocrFullText');
+  const confirmBtn = $('#ocrConfirmBtn');
+  let selectedWords = new Set();
 
   overlay.style.display = 'flex';
   wordList.innerHTML = '<span style="color:var(--text-muted);font-size:0.85rem">載入語言包並辨識中，請稍候...</span>';
   fullText.textContent = '';
+  confirmBtn.textContent = '\u2705 確認填入（0 個字詞）';
+  confirmBtn.disabled = true;
+
+  // Helper: sync confirm button state
+  const syncConfirmBtn = () => {
+    const n = selectedWords.size;
+    confirmBtn.disabled = n === 0;
+    confirmBtn.textContent = `\u2705 確認填入（${n} 個字詞）`;
+  };
+
+  // Confirm handler
+  const onConfirm = () => {
+    if (selectedWords.size === 0) return;
+    $('#inputWord').value = [...selectedWords].join(' ');
+    overlay.style.display = 'none';
+  };
+  confirmBtn.onclick = onConfirm;
 
   try {
     const { data } = await Tesseract.recognize(imageFile, tesseractLang, {
@@ -1779,9 +1831,6 @@ async function runOCR(imageFile, lang) {
     const text = data.text.trim();
     fullText.textContent = text || '(未辨識到文字)';
 
-    // Split into word/phrase candidates
-    // For CJK: split by spaces and newlines and punctuation
-    // For Latin: split by spaces
     const isCJK = ['jpn', 'chi_tra', 'chi_sim', 'kor'].includes(tesseractLang);
     let candidates;
     if (isCJK) {
@@ -1789,44 +1838,195 @@ async function runOCR(imageFile, lang) {
     } else {
       candidates = text.split(/\s+/).filter(w => w.length > 1);
     }
-
-    // Deduplicate
     const unique = [...new Set(candidates)];
 
     wordList.innerHTML = '';
-
-    // If only one token, auto-fill
-    if (unique.length === 1) {
-      $('#inputWord').value = unique[0];
-      overlay.style.display = 'none';
-      showToast(`已自動代入：${unique[0]}`);
-      return;
-    }
 
     if (unique.length === 0) {
       wordList.innerHTML = '<span style="color:var(--text-muted);font-size:0.85rem">未辨識到文字，請嘗試更清晰的照片</span>';
       return;
     }
 
-    // Show selectable chips
+    // Show multi-select chips
     unique.forEach(word => {
       const chip = document.createElement('button');
       chip.type = 'button';
-      chip.className = 'lang-btn';
+      chip.className = 'lang-btn ocr-word-chip';
       chip.style.cssText = 'font-size:0.9rem;padding:0.4rem 0.8rem';
       chip.textContent = word;
       chip.addEventListener('click', () => {
-        $('#inputWord').value = word;
-        overlay.style.display = 'none';
+        if (selectedWords.has(word)) {
+          selectedWords.delete(word);
+          chip.classList.remove('selected');
+        } else {
+          selectedWords.add(word);
+          chip.classList.add('selected');
+        }
+        syncConfirmBtn();
       });
       wordList.appendChild(chip);
     });
+
+    // Auto-select if only one token
+    if (unique.length === 1) {
+      wordList.querySelector('.ocr-word-chip')?.click();
+    }
 
   } catch (e) {
     console.error('[OCR]', e);
     wordList.innerHTML = '<span style="color:var(--text-muted);font-size:0.85rem">辨識失敗，請再試</span>';
   }
 }
+
+// ── Image compression (client-side, max maxKB) ──
+function compressImage(file, maxKB = 50) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const canvas = document.createElement('canvas');
+      let { width, height } = img;
+      // Scale down if very large
+      const MAX_DIM = 1200;
+      if (width > MAX_DIM || height > MAX_DIM) {
+        const ratio = Math.min(MAX_DIM / width, MAX_DIM / height);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+      }
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+      // Binary search quality for target size
+      let lo = 0.1, hi = 0.95, best = null;
+      for (let i = 0; i < 8; i++) {
+        const mid = (lo + hi) / 2;
+        const dataUrl = canvas.toDataURL('image/jpeg', mid);
+        const base64 = dataUrl.split(',')[1];
+        const kb = (base64.length * 3 / 4) / 1024;
+        if (kb <= maxKB) { best = dataUrl; lo = mid; }
+        else { hi = mid; }
+      }
+      // Fallback to lowest quality
+      if (!best) best = canvas.toDataURL('image/jpeg', 0.1);
+      const b64 = best.split(',')[1];
+      resolve({ dataUrl: best, base64: b64, mimeType: 'image/jpeg' });
+    };
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
+}
+
+// ── Upload image to Google Drive /img/ directory ──
+async function uploadImageToDrive(file, lang, statusEl) {
+  const url = getNotionProxyUrl();
+  if (!url) return null;
+  if (statusEl) { statusEl.style.display = 'block'; statusEl.textContent = '🖼️ 壓縮圖片中...'; }
+  const compressed = await compressImage(file, 50);
+  if (!compressed) {
+    if (statusEl) statusEl.textContent = '⚠️ 圖片處理失敗';
+    return null;
+  }
+  if (statusEl) statusEl.textContent = '☁️ 上傳中...';
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({
+        action: 'uploadImage',
+        base64Data: compressed.base64,
+        filename: `img_${Date.now()}.jpg`,
+        mimeType: compressed.mimeType,
+        lang: lang || 'other',
+      }),
+    });
+    const json = await res.json();
+    if (json.success) {
+      if (statusEl) statusEl.textContent = '✅ 圖片已上傳';
+      return json.url;
+    }
+    if (statusEl) statusEl.textContent = '⚠️ 上傳失敗：' + (json.error || '');
+    return null;
+  } catch (e) {
+    if (statusEl) statusEl.textContent = '⚠️ 上傳失敗';
+    return null;
+  }
+}
+
+// ── Tag Input ──
+function initTagInput(textInputEl, chipRowEl, hiddenEl, suggestionsEl) {
+  const allTags = () => hiddenEl.value ? hiddenEl.value.split(',').map(t => t.trim()).filter(Boolean) : [];
+
+  const renderChips = () => {
+    chipRowEl.innerHTML = '';
+    allTags().forEach(tag => {
+      const chip = document.createElement('span');
+      chip.className = 'tag-chip';
+      chip.innerHTML = `${escapeHtml(tag)}<button type="button" class="tag-remove" aria-label="移除">&times;</button>`;
+      chip.querySelector('.tag-remove').addEventListener('click', () => {
+        const tags = allTags().filter(t => t !== tag);
+        hiddenEl.value = tags.join(',');
+        renderChips();
+      });
+      chipRowEl.appendChild(chip);
+    });
+  };
+
+  const addTag = (val) => {
+    const tag = val.trim();
+    if (!tag) return;
+    const tags = allTags();
+    if (!tags.includes(tag)) tags.push(tag);
+    hiddenEl.value = tags.join(',');
+    renderChips();
+    textInputEl.value = '';
+    suggestionsEl.style.display = 'none';
+  };
+
+  const showSuggestions = (query) => {
+    const allCats = [...new Set(
+      cards.flatMap(c => (c.category || '').split(',').map(t => t.trim()))
+        .filter(Boolean)
+    )];
+    const filtered = allCats.filter(c => c.toLowerCase().includes(query.toLowerCase()) && !allTags().includes(c));
+    if (filtered.length === 0) { suggestionsEl.style.display = 'none'; return; }
+    suggestionsEl.innerHTML = filtered.map(c =>
+      `<div class="tag-suggestion-item" data-val="${escapeHtml(c)}">${escapeHtml(c)}</div>`
+    ).join('');
+    suggestionsEl.style.display = 'block';
+    suggestionsEl.querySelectorAll('.tag-suggestion-item').forEach(el => {
+      el.addEventListener('click', () => addTag(el.dataset.val));
+    });
+  };
+
+  textInputEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      addTag(textInputEl.value);
+    } else if (e.key === 'Backspace' && textInputEl.value === '') {
+      const tags = allTags();
+      if (tags.length > 0) {
+        tags.pop();
+        hiddenEl.value = tags.join(',');
+        renderChips();
+      }
+    }
+  });
+  textInputEl.addEventListener('input', () => showSuggestions(textInputEl.value));
+  textInputEl.addEventListener('blur', () => {
+    setTimeout(() => { suggestionsEl.style.display = 'none'; }, 200);
+    if (textInputEl.value.trim()) addTag(textInputEl.value);
+  });
+  // clicking wrapper focuses input
+  chipRowEl.parentElement?.addEventListener('click', () => textInputEl.focus());
+
+  return { renderChips, setTags: (csv) => { hiddenEl.value = csv || ''; renderChips(); } };
+}
+
+let _addImageUrl = ''; // temp storage for pending image URL in Add form
+let _editImageUrl = ''; // temp storage for pending image URL in Edit modal
+let _addTagInput = null;
+let _editTagInput = null;
 
 function initSmartInput() {
   // ─ Translate button (Add form) ─
@@ -1872,7 +2072,7 @@ function initSmartInput() {
     });
   }
 
-  // ─ Photo / OCR button ─
+  // ─ Photo / OCR button (Add form - for word) ─
   const ocrBtn = $('#ocrPhotoBtn');
   const ocrInput = $('#ocrImageInput');
   if (ocrBtn && ocrInput) {
@@ -1886,6 +2086,43 @@ function initSmartInput() {
     });
   }
 
+  // ─ Image button (Add form - for meaning/card image) ─
+  const meaningImageBtn = $('#meaningImageBtn');
+  const meaningImageInput = $('#meaningImageInput');
+  const meaningImageStatus = $('#meaningImageStatus');
+  if (meaningImageBtn && meaningImageInput) {
+    meaningImageBtn.addEventListener('click', () => meaningImageInput.click());
+    meaningImageInput.addEventListener('change', async () => {
+      const file = meaningImageInput.files[0];
+      if (!file) return;
+      const lang = $('#inputLang').value;
+      _addImageUrl = await uploadImageToDrive(file, lang, meaningImageStatus) || '';
+      meaningImageInput.value = '';
+      if (_addImageUrl) {
+        meaningImageStatus.textContent = '✅ 圖片已上傳，將顯示在卡片上';
+      }
+    });
+  }
+
+  // ─ Image button (Edit modal - for meaning/card image) ─
+  const editMeaningImageBtn = $('#editMeaningImageBtn');
+  const editMeaningImageInput = $('#editMeaningImageInput');
+  const editMeaningImageStatus = $('#editMeaningImageStatus');
+  if (editMeaningImageBtn && editMeaningImageInput) {
+    editMeaningImageBtn.addEventListener('click', () => editMeaningImageInput.click());
+    editMeaningImageInput.addEventListener('change', async () => {
+      const file = editMeaningImageInput.files[0];
+      if (!file) return;
+      const lang = ($('#editLang')?.value) || $('#inputLang').value;
+      _editImageUrl = await uploadImageToDrive(file, lang, editMeaningImageStatus) || '';
+      editMeaningImageInput.value = '';
+      if (_editImageUrl) {
+        $('#editImageUrl').value = _editImageUrl;
+        editMeaningImageStatus.textContent = '✅ 圖片已上傳，將顯示在卡片上';
+      }
+    });
+  }
+
   // ─ OCR overlay close ─
   $('#ocrOverlayClose')?.addEventListener('click', () => {
     $('#ocrOverlay').style.display = 'none';
@@ -1893,4 +2130,12 @@ function initSmartInput() {
   $('#ocrOverlay')?.addEventListener('click', (e) => {
     if (e.target === $('#ocrOverlay')) $('#ocrOverlay').style.display = 'none';
   });
+
+  // ─ Tag inputs ─
+  _addTagInput = initTagInput(
+    $('#addTagInput'), $('#addTagChips'), $('#inputCategory'), $('#addTagSuggestions')
+  );
+  _editTagInput = initTagInput(
+    $('#editTagInput'), $('#editTagChips'), $('#editCategory'), $('#editTagSuggestions')
+  );
 }

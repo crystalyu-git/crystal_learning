@@ -317,8 +317,19 @@
                                 </svg>
                                 翻譯
                             </button>
+                            <button type="button" id="meaningImageBtn" class="audio-action-btn" title="上傳圖片顯示在卡片上">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                                    <circle cx="8.5" cy="8.5" r="1.5" />
+                                    <polyline points="21 15 16 10 5 21" />
+                                </svg>
+                                圖片
+                            </button>
                         </div>
+                        <input type="file" id="meaningImageInput" accept="image/*" style="display:none">
                         <div id="translateStatus" class="audio-status" style="display:none"></div>
+                        <div id="meaningImageStatus" class="audio-status" style="display:none"></div>
                     </div>
 
                     <div class="form-group">
@@ -337,7 +348,7 @@
                     </div>
 
                     <div class="form-group">
-                        <label for="inputCategory" class="form-label">
+                        <label class="form-label">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="2">
                                 <path
@@ -346,9 +357,14 @@
                             </svg>
                             分類標籤（選填）
                         </label>
-                        <input type="text" id="inputCategory" class="form-input" placeholder="例：法語, 日常用語"
-                            autocomplete="off" list="categoryList">
-                        <datalist id="categoryList"></datalist>
+                        <!-- Tag-input wrapper -->
+                        <div class="tag-input-wrapper" id="addTagWrapper">
+                            <div class="tag-chips-row" id="addTagChips"></div>
+                            <input type="text" id="addTagInput" class="tag-text-input" placeholder="輸入後按 Enter 新增標籤"
+                                autocomplete="off">
+                        </div>
+                        <input type="hidden" id="inputCategory">
+                        <div class="tag-suggestions" id="addTagSuggestions" style="display:none"></div>
                     </div>
 
                     <div class="form-group">
@@ -484,6 +500,7 @@
                                 <div class="card-pronunciation" id="backSecondaryText" style="margin-bottom: 0.5rem;">
                                 </div>
                                 <div class="card-example" id="backTertiaryText"></div>
+                                <img id="cardImage" class="card-image" src="" alt="" style="display:none">
                                 <div class="card-hint">點擊翻回 →</div>
                             </div>
                         </div>
@@ -664,16 +681,33 @@
                             </svg>
                             翻譯
                         </button>
+                        <button type="button" id="editMeaningImageBtn" class="audio-action-btn" title="上傳圖片顯示在卡片上">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <rect x="3" y="3" width="18" height="18" rx="2" />
+                                <circle cx="8.5" cy="8.5" r="1.5" />
+                                <polyline points="21 15 16 10 5 21" />
+                            </svg>
+                            圖片
+                        </button>
                     </div>
+                    <input type="file" id="editMeaningImageInput" accept="image/*" style="display:none">
                     <div id="editTranslateStatus" class="audio-status" style="display:none"></div>
+                    <div id="editMeaningImageStatus" class="audio-status" style="display:none"></div>
                 </div>
                 <div class="form-group">
                     <label for="editExample" class="form-label">例句 / 備註</label>
                     <textarea id="editExample" class="form-input form-textarea" rows="2"></textarea>
                 </div>
                 <div class="form-group">
-                    <label for="editCategory" class="form-label">分類標籤</label>
-                    <input type="text" id="editCategory" class="form-input" autocomplete="off" list="categoryList">
+                    <label class="form-label">分類標籤</label>
+                    <div class="tag-input-wrapper" id="editTagWrapper">
+                        <div class="tag-chips-row" id="editTagChips"></div>
+                        <input type="text" id="editTagInput" class="tag-text-input" placeholder="輸入後按 Enter 新增標籤"
+                            autocomplete="off">
+                    </div>
+                    <input type="hidden" id="editCategory">
+                    <div class="tag-suggestions" id="editTagSuggestions" style="display:none"></div>
                 </div>
                 <div class="form-group">
                     <label for="editAudioUrl" class="form-label">自訂音源（選填）</label>
@@ -702,6 +736,8 @@
                     </div>
                     <div id="editAudioStatus" class="audio-status" style="display:none"></div>
                     <input type="file" id="editAudioFileInput" accept="audio/*" style="display:none">
+                    <!-- hidden imageUrl field for editing -->
+                    <input type="hidden" id="editImageUrl">
                 </div>
                 <div class="form-group">
                     <label for="editLang" class="form-label">發音語言</label>
@@ -753,7 +789,7 @@
 
     <!-- OCR Result Overlay -->
     <div id="ocrOverlay"
-        style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;display:none;align-items:center;justify-content:center">
+        style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;align-items:center;justify-content:center">
         <div
             style="background:var(--bg-card);border:1px solid var(--border-light);border-radius:var(--radius-lg);padding:1.5rem;width:min(420px,90vw);max-height:80vh;overflow-y:auto">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
@@ -761,8 +797,11 @@
                 <button id="ocrOverlayClose"
                     style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:1.2rem">&times;</button>
             </div>
-            <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.75rem">點選詞彙將填入「生字/字句」欄位</p>
+            <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.75rem">點選詞彙選取（可複選），再按確認填入</p>
             <div id="ocrWordList" style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:1rem"></div>
+            <button id="ocrConfirmBtn"
+                style="width:100%;padding:0.6rem;border-radius:var(--radius-md);border:none;background:var(--gradient-primary);color:#fff;font-weight:600;cursor:pointer;font-size:0.9rem;margin-bottom:0.75rem"
+                disabled>✅ 確認填入（0 個字詞）</button>
             <div style="border-top:1px solid var(--border-light);padding-top:0.75rem">
                 <p style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.5rem">全文</p>
                 <p id="ocrFullText"

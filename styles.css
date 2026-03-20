@@ -692,6 +692,106 @@ body {
   transform: translateY(0);
 }
 
+/* ── Tag Input ── */
+.tag-input-wrapper {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-glass);
+  cursor: text;
+  min-height: 2.5rem;
+  align-items: center;
+}
+
+.tag-chips-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.55rem;
+  background: rgba(99, 102, 241, 0.18);
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  border-radius: 20px;
+  font-size: 0.78rem;
+  color: #a5b4fc;
+  white-space: nowrap;
+}
+
+.tag-chip .tag-remove {
+  background: none;
+  border: none;
+  color: #a5b4fc;
+  cursor: pointer;
+  padding: 0;
+  font-size: 0.85rem;
+  line-height: 1;
+  opacity: 0.7;
+}
+
+.tag-chip .tag-remove:hover {
+  opacity: 1;
+}
+
+.tag-text-input {
+  border: none;
+  background: transparent;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  flex: 1;
+  min-width: 100px;
+}
+
+.tag-suggestions {
+  margin-top: 0.25rem;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  overflow: hidden;
+}
+
+.tag-suggestion-item {
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.tag-suggestion-item:hover {
+  background: rgba(99, 102, 241, 0.12);
+  color: var(--text-primary);
+}
+
+/* ── Card Image ── */
+.card-image {
+  max-width: 100%;
+  max-height: 180px;
+  object-fit: contain;
+  border-radius: var(--radius-md);
+  margin-top: 0.75rem;
+}
+
+/* ── OCR chip selected state ── */
+.ocr-word-chip {
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.ocr-word-chip.selected {
+  background: rgba(99, 102, 241, 0.35);
+  border-color: rgba(99, 102, 241, 0.8);
+  color: #c7d2fe;
+  transform: scale(1.06);
+}
+
 /* ── Toast ── */
 .toast {
   position: fixed;

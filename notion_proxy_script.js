@@ -40,13 +40,14 @@ const NOTION_API_BASE = 'https://api.notion.com/v1';
 
 // 定義欄位與 Notion 屬性型態的對應表
 const PROPERTY_TYPES = {
-    id: 'rich_text', // 雖然我們內部叫 id，但因為 word 是 title，所以 id 我們用 text 存
+    id: 'rich_text',
     word: 'title',
     pronunciation: 'rich_text',
     meaning: 'rich_text',
     example: 'rich_text',
-    category: 'select',
+    category: 'rich_text',  // multi-tag support (comma-separated)
     audioUrl: 'url',
+    imageUrl: 'url',        // card image
     lang: 'select',
     level: 'number',
     nextReview: 'number',
@@ -85,6 +86,8 @@ function doPost(e) {
                 return syncAll(body.cards);
             case 'uploadAudio':
                 return uploadAudio(body.base64Data, body.filename, body.mimeType, body.lang);
+            case 'uploadImage':
+                return uploadImage(body.base64Data, body.filename, body.mimeType, body.lang);
             case 'deleteAudio':
                 return deleteAudio(body.fileId);
             default:
@@ -220,6 +223,33 @@ function deleteCard(appCardId) {
         }
     }
     return jsonResponse({ success: true });
+}
+
+// 上傳圖片到 Google Drive /img/ 子目錄
+function uploadImage(base64Data, filename, mimeType, lang) {
+    try {
+        const FOLDER_NAME = 'Crystal_Learning';
+        const IMG_SUBFOLDER = 'img';
+
+        let rootFolder;
+        const rootFolders = DriveApp.getFoldersByName(FOLDER_NAME);
+        rootFolder = rootFolders.hasNext() ? rootFolders.next() : DriveApp.createFolder(FOLDER_NAME);
+
+        let imgFolder;
+        const imgFolders = rootFolder.getFoldersByName(IMG_SUBFOLDER);
+        imgFolder = imgFolders.hasNext() ? imgFolders.next() : rootFolder.createFolder(IMG_SUBFOLDER);
+
+        const decoded = Utilities.base64Decode(base64Data);
+        const blob = Utilities.newBlob(decoded, mimeType || 'image/jpeg', filename || 'image.jpg');
+        const file = imgFolder.createFile(blob);
+        file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+        const fileId = file.getId();
+        const shareUrl = `https://drive.google.com/file/d/${fileId}/view`;
+        return jsonResponse({ success: true, url: shareUrl, fileId: fileId });
+    } catch (error) {
+        return jsonResponse({ success: false, error: 'Image upload error: ' + error.toString() });
+    }
 }
 
 // 上傳音檔到 Google Drive
@@ -401,8 +431,12 @@ function parseNotionPageToCard(page) {
     card.pronunciation = getText('pronunciation');
     card.meaning = getText('meaning');
     card.example = getText('example');
-    card.category = getSelect('category');
+    card.category = getText('category');  // read from rich_text (new) or fallback to select (old)
+    if (!card.category && props['category'] && props['category'].type === 'select' && props['category'].select) {
+        card.category = props['category'].select.name || '';
+    }
     card.audioUrl = getUrl('audioUrl');
+    card.imageUrl = getUrl('imageUrl');
     card.lang = getSelect('lang');
     card.level = getNumber('level');
     card.nextReview = getNumber('nextReview');
@@ -429,12 +463,15 @@ function buildNotionProperties(card) {
 
     // 3. URLs — Notion 規格：清空 URL 屬性必須用 { url: null }，不能直接給 null
     props.audioUrl = card.audioUrl ? { url: card.audioUrl } : { url: null };
+    props.imageUrl = card.imageUrl ? { url: card.imageUrl } : { url: null };
 
-    // 4. Selects — Notion 規格：清空 Select 屬性必須用 { select: null }，不能直接給 null
-    props.category = card.category ? { select: { name: card.category } } : { select: null };
+    // 4. Category — 儲存為 rich_text（支援逗號分隔的多標籤）
+    props.category = { rich_text: [{ text: { content: card.category || '' } }] };
+
+    // 5. Selects — lang 保持 select
     props.lang = card.lang ? { select: { name: card.lang } } : { select: null };
 
-    // 5. Numbers
+    // 6. Numbers
     props.level = { number: Number(card.level) || 0 };
     props.nextReview = { number: Number(card.nextReview) || 0 };
     props.createdAt = { number: Number(card.createdAt) || 0 };
