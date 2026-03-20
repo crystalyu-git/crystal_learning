@@ -975,18 +975,31 @@ function showCurrentCard() {
 
   // Show card image if present
   const cardImg = $('#cardImage');
-  if (cardImg) {
+  const cardImgFront = $('#cardImageFront');
+  if (cardImg || cardImgFront) {
     if (card.imageUrl) {
       // Convert Google Drive share URL to direct embed URL
       const driveMatch = card.imageUrl.match(/\/file\/d\/([^/]+)/);
       const embedUrl = driveMatch
         ? `https://lh3.googleusercontent.com/d/${driveMatch[1]}`
         : card.imageUrl;
-      cardImg.src = embedUrl;
-      cardImg.style.display = 'block';
+      if (cardImg) {
+        cardImg.src = embedUrl;
+        cardImg.style.display = 'block';
+      }
+      if (cardImgFront) {
+        cardImgFront.src = embedUrl;
+        cardImgFront.style.display = 'block';
+      }
     } else {
-      cardImg.style.display = 'none';
-      cardImg.src = '';
+      if (cardImg) {
+        cardImg.style.display = 'none';
+        cardImg.src = '';
+      }
+      if (cardImgFront) {
+        cardImgFront.style.display = 'none';
+        cardImgFront.src = '';
+      }
     }
   }
 }
