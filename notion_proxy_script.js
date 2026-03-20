@@ -297,12 +297,16 @@ function uploadAudio(base64Data, filename, mimeType, lang) {
 }
 
 // ── Google Cloud Vision OCR ──
-// 前提：在 Google Cloud Console 中為本 Apps Script 的 GCP 專案啟用 "Cloud Vision API"
-// (Apps Script → 左側「專案設定」 → 取得 GCP 專案編號 → 到 Cloud Console 啟用 API)
+// Cloud Vision OCR — 使用 API Key（存在指令碼屬性 VISION_API_KEY）
+// GCP Console → APIs & Services → Credentials → Create API Key → 限制為 Cloud Vision API
 function performOCR(base64Data, mimeType) {
     try {
-        const token = ScriptApp.getOAuthToken();
-        const apiUrl = 'https://vision.googleapis.com/v1/images:annotate';
+        const apiKey = PropertiesService.getScriptProperties().getProperty('VISION_API_KEY');
+        if (!apiKey) {
+            return jsonResponse({ success: false, error: '請在 Apps Script 指令碼屬性中新增 VISION_API_KEY' });
+        }
+
+        const apiUrl = 'https://vision.googleapis.com/v1/images:annotate?key=' + apiKey;
 
         const requestBody = {
             requests: [{
@@ -315,7 +319,6 @@ function performOCR(base64Data, mimeType) {
         const response = UrlFetchApp.fetch(apiUrl, {
             method: 'post',
             contentType: 'application/json',
-            headers: { 'Authorization': 'Bearer ' + token },
             payload: JSON.stringify(requestBody),
             muteHttpExceptions: true
         });
@@ -331,10 +334,8 @@ function performOCR(base64Data, mimeType) {
             return jsonResponse({ success: false, error: annotations?.error?.message || 'No text detected' });
         }
 
-        // fullTextAnnotation gives cleanest result with line breaks preserved
         const fullText = annotations.fullTextAnnotation?.text || annotations.textAnnotations?.[0]?.description || '';
 
-        // Extract individual words/tokens from each block/paragraph/word
         const words = [];
         const pages = annotations.fullTextAnnotation?.pages || [];
         pages.forEach(page => {
