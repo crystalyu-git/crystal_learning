@@ -208,10 +208,24 @@ async function syncFromNotion() {
   try {
     const notionCards = await NotionAPI.loadAll();
     if (notionCards && notionCards.length > 0) {
-      // Merge: Notion is source of truth, but keep local-only cards too
-      const notionIds = new Set(notionCards.map(c => c.id));
-      const localOnlyCards = cards.filter(c => c.id && !notionIds.has(c.id));
-      cards = [...notionCards, ...localOnlyCards];
+      // ── Extract hidden streak card ──
+      const streakCard = notionCards.find(c => c.id === STREAK_CARD_ID);
+      if (streakCard) {
+        const notionStreak = { count: streakCard.level || 0, lastDate: streakCard.example || null };
+        const localStreak = loadStreak();
+        // Keep whichever has a more recent lastDate (or higher count if dates equal)
+        const notionDate = notionStreak.lastDate ? new Date(notionStreak.lastDate).getTime() : 0;
+        const localDate = localStreak.lastDate ? new Date(localStreak.lastDate).getTime() : 0;
+        if (notionDate > localDate || (notionDate === localDate && notionStreak.count > localStreak.count)) {
+          saveStreak(notionStreak, false); // update local only, don't re-push
+        }
+      }
+
+      // ── Merge real cards (exclude streak meta-card) ──
+      const realNotionCards = notionCards.filter(c => c.id !== STREAK_CARD_ID);
+      const notionIds = new Set(realNotionCards.map(c => c.id));
+      const localOnlyCards = cards.filter(c => c.id && c.id !== STREAK_CARD_ID && !notionIds.has(c.id));
+      cards = [...realNotionCards, ...localOnlyCards];
       saveCardsToLocal();
       // Push any local-only cards to Notion
       if (localOnlyCards.length > 0) {
@@ -317,6 +331,8 @@ function hideLoading() {
   $('#loadingOverlay').classList.remove('active');
 }
 
+const STREAK_CARD_ID = '__crystal_streak__';
+
 function loadStreak() {
   try {
     const data = localStorage.getItem('crystal_learning_streak');
@@ -326,8 +342,21 @@ function loadStreak() {
   }
 }
 
-function saveStreak(streak) {
+function saveStreak(streak, pushToNotion = true) {
   localStorage.setItem('crystal_learning_streak', JSON.stringify(streak));
+  if (pushToNotion && getNotionProxyUrl()) {
+    // Store streak as a hidden Notion card so it syncs across devices
+    const streakCard = {
+      id: STREAK_CARD_ID,
+      word: '__streak__',
+      meaning: String(streak.count),
+      example: streak.lastDate || '',
+      pronunciation: '', category: '', audioUrl: '', lang: '',
+      level: streak.count,
+      nextReview: 0, createdAt: Date.now(), reviewCount: 0,
+    };
+    saveCardToNotion(streakCard); // fire-and-forget
+  }
 }
 
 // ── Language Filter System ──
@@ -398,8 +427,10 @@ function renderLangFilterBars() {
 }
 
 function getCardsByLang() {
-  if (currentLangFilter === 'all') return cards;
-  return cards.filter(c => c.lang === currentLangFilter);
+  // Always exclude the hidden streak meta-card from display lists
+  const visible = cards.filter(c => c.id !== STREAK_CARD_ID);
+  if (currentLangFilter === 'all') return visible;
+  return visible.filter(c => c.lang === currentLangFilter);
 }
 
 function initLangToggle() {
