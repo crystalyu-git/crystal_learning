@@ -1025,15 +1025,14 @@ function handleRating(rating) {
 }
 
 function finishReview() {
-  // Update streak
+  // Update streak — use UTC date so all timezones agree on the same date string
   const streak = loadStreak();
-  const todayStr = new Date().toDateString();
+  const todayStr = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD" UTC
   if (streak.lastDate !== todayStr) {
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    if (streak.lastDate === yesterday.toDateString()) {
+    const yesterdayStr = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    if (streak.lastDate === yesterdayStr) {
       streak.count++;
-    } else if (streak.lastDate !== todayStr) {
+    } else {
       streak.count = 1;
     }
     streak.lastDate = todayStr;
