@@ -1114,7 +1114,7 @@ function finishReview() {
 // ── Library ──
 function initLibrary() {
   $('#searchInput').addEventListener('input', renderLibrary);
-  $('#filterCategory').addEventListener('change', renderLibrary);
+  $('#filterCategory').addEventListener('input', renderLibrary);
 }
 
 function renderLibrary() {
@@ -1140,10 +1140,11 @@ function renderLibrary() {
   }
 
   if (filterCat) {
+    const filterCatLower = filterCat.toLowerCase();
     filtered = filtered.filter(c => {
       if (!c.category) return false;
-      const tags = c.category.split(',').map(t => t.trim());
-      return tags.includes(filterCat);
+      const tags = c.category.split(',').map(t => t.trim().toLowerCase());
+      return tags.some(t => t.includes(filterCatLower));
     });
   }
 
@@ -1278,8 +1279,8 @@ function updateCategoryDatalist() {
 }
 
 function updateCategoryFilter(activeCards) {
-  const select = $('#filterCategory');
-  const currentValue = select.value;
+  const datalist = $('#filterCategoryList');
+  if (!datalist) return;
 
   const allTags = [];
   activeCards.forEach(c => {
@@ -1289,9 +1290,7 @@ function updateCategoryFilter(activeCards) {
   });
   const categories = [...new Set(allTags)].filter(Boolean).sort();
 
-  // Keep existing selected value
-  select.innerHTML = `<option value="">所有分類</option>` +
-    categories.map(cat => `<option value="${cat}" ${cat === currentValue ? 'selected' : ''}>${cat}</option>`).join('');
+  datalist.innerHTML = categories.map(cat => `<option value="${escapeHtml(cat)}">`).join('');
 }
 
 // ── Modal ──
