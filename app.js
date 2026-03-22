@@ -2060,20 +2060,20 @@ async function uploadImageToDrive(file, lang, statusEl) {
   const url = getNotionProxyUrl();
   if (!url) return null;
   if (statusEl) {
-    statusEl.className = 'status-text uploading';
+    statusEl.className = 'audio-status uploading';
     statusEl.style.display = 'block';
     statusEl.textContent = '⏳ 處理圖片中...';
   }
   const compressed = await compressImage(file, 50);
   if (!compressed) {
     if (statusEl) {
-      statusEl.className = 'status-text error';
+      statusEl.className = 'audio-status error';
       statusEl.textContent = '❌ 圖片處理失敗';
     }
     return null;
   }
   if (statusEl) {
-    statusEl.className = 'status-text uploading';
+    statusEl.className = 'audio-status uploading';
     statusEl.textContent = '⏳ 上傳中，請稍候...';
   }
   try {
@@ -2091,19 +2091,19 @@ async function uploadImageToDrive(file, lang, statusEl) {
     const json = await res.json();
     if (json.success) {
       if (statusEl) {
-        statusEl.className = 'status-text success';
+        statusEl.className = 'audio-status success';
         statusEl.textContent = '✅ 圖片上傳成功！';
       }
       return json.url;
     }
     if (statusEl) {
-      statusEl.className = 'status-text error';
+      statusEl.className = 'audio-status error';
       statusEl.textContent = '❌ 上傳失敗：' + (json.error || '');
     }
     return null;
   } catch (e) {
     if (statusEl) {
-      statusEl.className = 'status-text error';
+      statusEl.className = 'audio-status error';
       statusEl.textContent = '❌ 上傳失敗';
     }
     return null;
