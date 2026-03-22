@@ -61,8 +61,65 @@ function adjustHexToRgba(hex, percent, alpha) {
 }
 
 // ── Theme Customization ──
+
+function hexToHsl(hex) {
+  let result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  if (!result) return null;
+  let r = parseInt(result[1], 16) / 255;
+  let g = parseInt(result[2], 16) / 255;
+  let b = parseInt(result[3], 16) / 255;
+  let max = Math.max(r, g, b), min = Math.min(r, g, b);
+  let h, s, l = (max + min) / 2;
+  if (max == min) {
+    h = s = 0;
+  } else {
+    let d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+      case g: h = (b - r) / d + 2; break;
+      case b: h = (r - g) / d + 4; break;
+    }
+    h /= 6;
+  }
+  return [h * 360, s * 100, l * 100];
+}
+
+function hslToHex(h, s, l) {
+  l /= 100;
+  const a = s * Math.min(l, 1 - l) / 100;
+  const f = n => {
+    const k = (n + h / 30) % 12;
+    const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+    return Math.round(255 * color).toString(16).padStart(2, '0');
+  };
+  return `#${f(0)}${f(8)}${f(4)}`;
+}
+
+function getSecondaryAccent(hex) {
+  const hsl = hexToHsl(hex);
+  if (!hsl) return hex;
+  const newH = (hsl[0] + 35) % 360; // Shift hue by 35 degrees up
+  return hslToHex(newH, hsl[1], hsl[2]);
+}
+
 function applyTheme(theme) {
   const root = document.documentElement;
+
+  if (theme.accentPrimary) {
+    const secondary = getSecondaryAccent(theme.accentPrimary);
+    root.style.setProperty('--accent-primary', theme.accentPrimary);
+    root.style.setProperty('--accent-secondary', secondary);
+    root.style.setProperty('--text-accent', theme.accentPrimary);
+    root.style.setProperty('--gradient-primary', `linear-gradient(135deg, ${theme.accentPrimary} 0%, ${secondary} 100%)`);
+    if ($('#colorAccent')) $('#colorAccent').value = theme.accentPrimary;
+  } else {
+    root.style.removeProperty('--accent-primary');
+    root.style.removeProperty('--accent-secondary');
+    root.style.removeProperty('--text-accent');
+    root.style.removeProperty('--gradient-primary');
+    if ($('#colorAccent')) $('#colorAccent').value = '#6366f1';
+  }
 
   if (theme.bgPrimary) {
     root.style.setProperty('--bg-primary', theme.bgPrimary);
@@ -1456,6 +1513,14 @@ function initSettings() {
   $('#colorCardBack').addEventListener('input', (e) => {
     document.documentElement.style.setProperty('--card-back-bg', e.target.value);
   });
+  $('#colorAccent').addEventListener('input', (e) => {
+    const hex = e.target.value;
+    const secondary = getSecondaryAccent(hex);
+    document.documentElement.style.setProperty('--accent-primary', hex);
+    document.documentElement.style.setProperty('--accent-secondary', secondary);
+    document.documentElement.style.setProperty('--text-accent', hex);
+    document.documentElement.style.setProperty('--gradient-primary', `linear-gradient(135deg, ${hex} 0%, ${secondary} 100%)`);
+  });
 
   // Theme Reset
   $('#resetThemeBtn').addEventListener('click', () => {
@@ -1474,6 +1539,7 @@ function initSettings() {
       bgPrimary: $('#colorBgPrimary').value !== '#0a0a1a' ? $('#colorBgPrimary').value : '',
       cardFront: $('#colorCardFront').value !== '#19193c' ? $('#colorCardFront').value : '',
       cardBack: $('#colorCardBack').value !== '#0e241c' ? $('#colorCardBack').value : '',
+      accentPrimary: $('#colorAccent').value !== '#6366f1' ? $('#colorAccent').value : '',
     };
     saveTheme(currentTheme);
 
