@@ -41,15 +41,40 @@ function setNotionProxyUrl(url) {
   localStorage.setItem('crystal_learning_notion_url', url);
 }
 
+function adjustHexToRgba(hex, percent, alpha) {
+  hex = hex.replace(/^#/, '');
+  if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+  let r = parseInt(hex.substring(0, 2), 16) || 0;
+  let g = parseInt(hex.substring(2, 4), 16) || 0;
+  let b = parseInt(hex.substring(4, 6), 16) || 0;
+  if (percent > 0) {
+    r = Math.min(255, Math.floor(r + (255 - r) * (percent / 100)));
+    g = Math.min(255, Math.floor(g + (255 - g) * (percent / 100)));
+    b = Math.min(255, Math.floor(b + (255 - b) * (percent / 100)));
+  } else if (percent < 0) {
+    const factor = 1 + (percent / 100);
+    r = Math.max(0, Math.floor(r * factor));
+    g = Math.max(0, Math.floor(g * factor));
+    b = Math.max(0, Math.floor(b * factor));
+  }
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 // ── Theme Customization ──
 function applyTheme(theme) {
   const root = document.documentElement;
 
   if (theme.bgPrimary) {
     root.style.setProperty('--bg-primary', theme.bgPrimary);
+    root.style.setProperty('--bg-header', adjustHexToRgba(theme.bgPrimary, -25, 0.85));
+    root.style.setProperty('--bg-card', adjustHexToRgba(theme.bgPrimary, -15, 0.6));
+    root.style.setProperty('--bg-card-hover', adjustHexToRgba(theme.bgPrimary, -5, 0.7));
     if ($('#colorBgPrimary')) $('#colorBgPrimary').value = theme.bgPrimary;
   } else {
     root.style.removeProperty('--bg-primary');
+    root.style.removeProperty('--bg-header');
+    root.style.removeProperty('--bg-card');
+    root.style.removeProperty('--bg-card-hover');
     if ($('#colorBgPrimary')) $('#colorBgPrimary').value = '#0a0a1a';
   }
 
