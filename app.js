@@ -2298,9 +2298,6 @@ function initSmartInput() {
       const lang = $('#inputLang').value;
       _addImageUrl = await uploadImageToDrive(file, lang, meaningImageStatus) || '';
       meaningImageInput.value = '';
-      if (_addImageUrl) {
-        meaningImageStatus.textContent = '✅ 圖片已上傳，將顯示在卡片上';
-      }
     });
   }
 
@@ -2318,7 +2315,6 @@ function initSmartInput() {
       editMeaningImageInput.value = '';
       if (_editImageUrl) {
         $('#editImageUrl').value = _editImageUrl;
-        editMeaningImageStatus.textContent = '✅ 圖片已上傳，將顯示在卡片上';
       }
     });
   }
