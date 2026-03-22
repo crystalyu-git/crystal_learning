@@ -134,22 +134,6 @@ function applyTheme(theme) {
     root.style.removeProperty('--bg-card-hover');
     if ($('#colorBgPrimary')) $('#colorBgPrimary').value = '#0a0a1a';
   }
-
-  if (theme.cardFront) {
-    root.style.setProperty('--card-front-bg', theme.cardFront);
-    if ($('#colorCardFront')) $('#colorCardFront').value = theme.cardFront;
-  } else {
-    root.style.removeProperty('--card-front-bg');
-    if ($('#colorCardFront')) $('#colorCardFront').value = '#19193c';
-  }
-
-  if (theme.cardBack) {
-    root.style.setProperty('--card-back-bg', theme.cardBack);
-    if ($('#colorCardBack')) $('#colorCardBack').value = theme.cardBack;
-  } else {
-    root.style.removeProperty('--card-back-bg');
-    if ($('#colorCardBack')) $('#colorCardBack').value = '#0e241c';
-  }
 }
 
 function loadTheme() {
@@ -1507,12 +1491,6 @@ function initSettings() {
   $('#colorBgPrimary').addEventListener('input', (e) => {
     document.documentElement.style.setProperty('--bg-primary', e.target.value);
   });
-  $('#colorCardFront').addEventListener('input', (e) => {
-    document.documentElement.style.setProperty('--card-front-bg', e.target.value);
-  });
-  $('#colorCardBack').addEventListener('input', (e) => {
-    document.documentElement.style.setProperty('--card-back-bg', e.target.value);
-  });
   $('#colorAccent').addEventListener('input', (e) => {
     const hex = e.target.value;
     const secondary = getSecondaryAccent(hex);
@@ -1537,8 +1515,6 @@ function initSettings() {
     // Save Theme Configuration
     const currentTheme = {
       bgPrimary: $('#colorBgPrimary').value !== '#0a0a1a' ? $('#colorBgPrimary').value : '',
-      cardFront: $('#colorCardFront').value !== '#19193c' ? $('#colorCardFront').value : '',
-      cardBack: $('#colorCardBack').value !== '#0e241c' ? $('#colorCardBack').value : '',
       accentPrimary: $('#colorAccent').value !== '#6366f1' ? $('#colorAccent').value : '',
     };
     saveTheme(currentTheme);
@@ -2083,13 +2059,23 @@ function compressImage(file, maxKB = 50) {
 async function uploadImageToDrive(file, lang, statusEl) {
   const url = getNotionProxyUrl();
   if (!url) return null;
-  if (statusEl) { statusEl.style.display = 'block'; statusEl.textContent = '🖼️ 壓縮圖片中...'; }
+  if (statusEl) {
+    statusEl.className = 'status-text uploading';
+    statusEl.style.display = 'block';
+    statusEl.textContent = '⏳ 處理圖片中...';
+  }
   const compressed = await compressImage(file, 50);
   if (!compressed) {
-    if (statusEl) statusEl.textContent = '⚠️ 圖片處理失敗';
+    if (statusEl) {
+      statusEl.className = 'status-text error';
+      statusEl.textContent = '❌ 圖片處理失敗';
+    }
     return null;
   }
-  if (statusEl) statusEl.textContent = '☁️ 上傳中...';
+  if (statusEl) {
+    statusEl.className = 'status-text uploading';
+    statusEl.textContent = '⏳ 上傳中，請稍候...';
+  }
   try {
     const res = await fetch(url, {
       method: 'POST',
@@ -2104,13 +2090,22 @@ async function uploadImageToDrive(file, lang, statusEl) {
     });
     const json = await res.json();
     if (json.success) {
-      if (statusEl) statusEl.textContent = '✅ 圖片已上傳';
+      if (statusEl) {
+        statusEl.className = 'status-text success';
+        statusEl.textContent = '✅ 圖片上傳成功！';
+      }
       return json.url;
     }
-    if (statusEl) statusEl.textContent = '⚠️ 上傳失敗：' + (json.error || '');
+    if (statusEl) {
+      statusEl.className = 'status-text error';
+      statusEl.textContent = '❌ 上傳失敗：' + (json.error || '');
+    }
     return null;
   } catch (e) {
-    if (statusEl) statusEl.textContent = '⚠️ 上傳失敗';
+    if (statusEl) {
+      statusEl.className = 'status-text error';
+      statusEl.textContent = '❌ 上傳失敗';
+    }
     return null;
   }
 }

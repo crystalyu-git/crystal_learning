@@ -11,7 +11,7 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;700&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=1.16">
+    <link rel="stylesheet" href="styles.css?v=1.17">
 </head>
 
 <body>
@@ -28,8 +28,8 @@
                     <path d="M2 14L14 20L26 14" stroke="url(#grad1)" stroke-width="2" fill="none" />
                     <defs>
                         <linearGradient id="grad1" x1="2" y1="2" x2="26" y2="26">
-                            <stop offset="0%" stop-color="#6366f1" />
-                            <stop offset="100%" stop-color="#a855f7" />
+                            <stop offset="0%" stop-color="var(--accent-primary, #6366f1)" />
+                            <stop offset="100%" stop-color="var(--accent-secondary, #a855f7)" />
                         </linearGradient>
                     </defs>
                 </svg>
@@ -814,7 +814,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <script src="https://unpkg.com/wanakana@5.3.1/wanakana.min.js"></script>
-    <script src="app.js?v=1.16"></script>
+    <script src="app.js?v=1.17"></script>
 
     <!-- OCR Result Overlay -->
     <div id="ocrOverlay"
