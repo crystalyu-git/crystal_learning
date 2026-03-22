@@ -1140,7 +1140,11 @@ function renderLibrary() {
   }
 
   if (filterCat) {
-    filtered = filtered.filter(c => c.category === filterCat);
+    filtered = filtered.filter(c => {
+      if (!c.category) return false;
+      const tags = c.category.split(',').map(t => t.trim());
+      return tags.includes(filterCat);
+    });
   }
 
   // Sort by creation date (newest first)
@@ -1263,14 +1267,27 @@ function updateCategoryDatalist() {
   const datalist = $('#categoryList');
   if (!datalist) return;
 
-  const categories = [...new Set(cards.map(c => c.category).filter(Boolean))];
+  const allTags = [];
+  cards.forEach(c => {
+    if (c.category) {
+      c.category.split(',').forEach(tag => allTags.push(tag.trim()));
+    }
+  });
+  const categories = [...new Set(allTags)].filter(Boolean).sort();
   datalist.innerHTML = categories.map(cat => `<option value="${escapeHtml(cat)}">`).join('');
 }
 
 function updateCategoryFilter(activeCards) {
   const select = $('#filterCategory');
   const currentValue = select.value;
-  const categories = [...new Set(activeCards.map(c => c.category).filter(Boolean))];
+
+  const allTags = [];
+  activeCards.forEach(c => {
+    if (c.category) {
+      c.category.split(',').forEach(tag => allTags.push(tag.trim()));
+    }
+  });
+  const categories = [...new Set(allTags)].filter(Boolean).sort();
 
   // Keep existing selected value
   select.innerHTML = `<option value="">所有分類</option>` +
