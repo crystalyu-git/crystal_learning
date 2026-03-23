@@ -1964,6 +1964,10 @@ body {
     display: none;
   }
 
+  .nav-btn.sync-status-btn span.sync-dot {
+    display: block;
+  }
+
   .main-content {
     padding-top: 100px;
   }
