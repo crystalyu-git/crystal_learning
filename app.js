@@ -193,36 +193,12 @@ function saveCardsToLocal() {
   renderLangFilterBars();
 }
 
-// iOS WebKit can sometimes drop the POST body when following a 302 redirect via fetch().
-// This safeFetch helper uses XMLHttpRequest which reliably handles the 302 redirect with body intact.
-function safeFetch(url, options = {}) {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open(options.method || 'GET', url);
-    if (options.headers) {
-      for (const [key, value] of Object.entries(options.headers)) {
-        xhr.setRequestHeader(key, value);
-      }
-    }
-    xhr.onload = () => {
-      resolve({
-        ok: xhr.status >= 200 && xhr.status < 300,
-        status: xhr.status,
-        json: async () => JSON.parse(xhr.responseText),
-        text: async () => xhr.responseText
-      });
-    };
-    xhr.onerror = () => reject(new Error('Network request failed'));
-    xhr.send(options.body || null);
-  });
-}
-
 // ── Notion Proxy API ──
 const NotionAPI = {
   async loadAll() {
     const url = getNotionProxyUrl();
     if (!url) return null;
-    const res = await safeFetch(url);
+    const res = await fetch(url);
     const data = await res.json();
     if (data.success) return data.cards;
     throw new Error(data.error || 'Failed to load');
@@ -231,7 +207,7 @@ const NotionAPI = {
   async saveCard(card) {
     const url = getNotionProxyUrl();
     if (!url) return;
-    const res = await safeFetch(url, {
+    const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify({ action: 'save', card }),
@@ -244,7 +220,7 @@ const NotionAPI = {
   async deleteCard(id) {
     const url = getNotionProxyUrl();
     if (!url) return;
-    await safeFetch(url, {
+    await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify({ action: 'delete', id }),
@@ -254,7 +230,7 @@ const NotionAPI = {
   async syncAll(cardsData) {
     const url = getNotionProxyUrl();
     if (!url) return;
-    await safeFetch(url, {
+    await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify({ action: 'sync', cards: cardsData }),
@@ -264,7 +240,7 @@ const NotionAPI = {
   async uploadAudio(base64Data, filename, mimeType, lang) {
     const url = getNotionProxyUrl();
     if (!url) throw new Error('No proxy URL configured');
-    const res = await safeFetch(url, {
+    const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify({ action: 'uploadAudio', base64Data, filename, mimeType, lang }),
@@ -277,7 +253,7 @@ const NotionAPI = {
   async deleteAudio(fileId) {
     const url = getNotionProxyUrl();
     if (!url) return;
-    const res = await safeFetch(url, {
+    const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify({ action: 'deleteAudio', fileId }),
@@ -344,7 +320,7 @@ async function saveCardToNotion(card) {
   } catch (e) {
     console.warn('Save to Notion failed:', e);
     updateSyncStatus('error');
-    showToast('⚠️ 字卡儲存失敗，請在設定點「立即同步」重試');
+    showToast('⚠️ 儲存失敗: ' + (e.message || String(e)).substring(0, 50));
   }
 }
 
