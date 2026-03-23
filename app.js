@@ -1893,8 +1893,8 @@ async function autoTranslate(word, fromLang, statusEl) {
   const to = 'zh-TW';
 
   statusEl.style.display = 'block';
-  statusEl.textContent = '翻譯中...';
-  statusEl.className = 'audio-status';
+  statusEl.textContent = '⏳ 翻譯中...';
+  statusEl.className = 'audio-status uploading';
 
   try {
     const res = await fetch(
@@ -1905,12 +1905,15 @@ async function autoTranslate(word, fromLang, statusEl) {
 
     if (translated && translated !== word) {
       $('#inputMeaning').value = translated;
-      statusEl.textContent = `✅ 已自動翻譯`;
+      statusEl.textContent = `✅ 翻譯成功！`;
+      statusEl.className = 'audio-status success';
     } else {
-      statusEl.textContent = '⚠️ 無法翻譯，請手動填寫';
+      statusEl.textContent = '❌ 無法翻譯，請手動填寫';
+      statusEl.className = 'audio-status error';
     }
   } catch (e) {
-    statusEl.textContent = '⚠️ 翻譯服務無法連線';
+    statusEl.textContent = '❌ 翻譯服務無法連線';
+    statusEl.className = 'audio-status error';
   }
 }
 
@@ -2212,7 +2215,8 @@ function initSmartInput() {
       const origFill = (text) => { $('#editMeaning').value = text; };
       // 借用 autoTranslate，但 target 是 editMeaning
       editTranslateStatus.style.display = 'block';
-      editTranslateStatus.textContent = '翻譯中...';
+      editTranslateStatus.textContent = '⏳ 翻譯中...';
+      editTranslateStatus.className = 'audio-status uploading';
       const from = MYMEMORY_LANG_MAP[lang] || 'en';
       try {
         const res = await fetch(
@@ -2222,12 +2226,15 @@ function initSmartInput() {
         const translated = data?.responseData?.translatedText;
         if (translated && translated !== word) {
           $('#editMeaning').value = translated;
-          editTranslateStatus.textContent = '✅ 已自動翻譯';
+          editTranslateStatus.textContent = '✅ 翻譯成功！';
+          editTranslateStatus.className = 'audio-status success';
         } else {
-          editTranslateStatus.textContent = '⚠️ 無法翻譯，請手動填寫';
+          editTranslateStatus.textContent = '❌ 無法翻譯，請手動填寫';
+          editTranslateStatus.className = 'audio-status error';
         }
       } catch (e) {
-        editTranslateStatus.textContent = '⚠️ 翻譯服務無法連線';
+        editTranslateStatus.textContent = '❌ 翻譯服務無法連線';
+        editTranslateStatus.className = 'audio-status error';
       }
     });
   }
