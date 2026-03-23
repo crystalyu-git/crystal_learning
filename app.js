@@ -820,6 +820,16 @@ function initAddForm() {
   $('#addForm').addEventListener('submit', async (e) => {
     e.preventDefault();
 
+    // Flush any lingering tag text before saving
+    if ($('#addTagInput') && $('#addTagInput').value.trim()) {
+      const text = $('#addTagInput').value.trim();
+      const tags = $('#inputCategory').value ? $('#inputCategory').value.split(',') : [];
+      if (!tags.includes(text)) tags.push(text);
+      $('#inputCategory').value = tags.filter(Boolean).join(',');
+      $('#addTagInput').value = '';
+      _addTagInput?.renderChips();
+    }
+
     const word = $('#inputWord').value.trim();
     const pronunciation = $('#inputPronunciation').value.trim();
     const meaning = $('#inputMeaning').value.trim();
@@ -1418,6 +1428,16 @@ function initModal() {
 
   $('#editForm').addEventListener('submit', async (e) => {
     e.preventDefault();
+
+    // Flush any lingering tag text before saving
+    if ($('#editTagInput') && $('#editTagInput').value.trim()) {
+      const text = $('#editTagInput').value.trim();
+      const tags = $('#editCategory').value ? $('#editCategory').value.split(',') : [];
+      if (!tags.includes(text)) tags.push(text);
+      $('#editCategory').value = tags.filter(Boolean).join(',');
+      $('#editTagInput').value = '';
+      _editTagInput?.renderChips();
+    }
     const id = $('#editCardId').value;
     const card = cards.find(c => c.id === id);
     if (!card) return;
