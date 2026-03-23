@@ -21,8 +21,8 @@ let currentLangFilter = localStorage.getItem('crystal_lang_filter') || 'all';
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
-// ── Notion Proxy API URL ──
-const DEFAULT_NOTION_URL = 'https://script.google.com/macros/s/AKfycbx-QzeIkDWffA1YsVmEb13PFu3CvfyvpezaqdX3LYGRM9dvo1XbPkU2z_0DesIQtlm0nw/exec';
+// ── Database Proxy API URL ──
+const DEFAULT_NOTION_URL = 'https://script.google.com/macros/s/AKfycbxSkf67lh47GWCGg3JI7xhkcDpaT3atAc60UufcfFQ-YRkHBrBqnihZX5cplj8WOnOsgA/exec';
 // Old deprecated URL — auto-migrate if still stored on this device
 const _OLD_NOTION_URL = 'https://script.google.com/macros/s/AKfycbwYDvfHI5XNMhwmF8v4KC7hCOs_xHQXNjelVriO5cpWOu0lxduFcBa40Ex6-CPwWF2q/exec';
 (function migrateNotionUrl() {
@@ -193,7 +193,7 @@ function saveCardsToLocal() {
   renderLangFilterBars();
 }
 
-// ── Notion Proxy API ──
+// ── Database Proxy API ──
 const NotionAPI = {
   async loadAll() {
     const url = getNotionProxyUrl();
@@ -293,20 +293,20 @@ async function syncFromNotion() {
       const localOnlyCards = cards.filter(c => c.id && c.id !== STREAK_CARD_ID && !notionIds.has(c.id));
       cards = [...realNotionCards, ...localOnlyCards];
       saveCardsToLocal();
-      // Push any local-only cards to Notion
+      // Push any local-only cards to Database
       if (localOnlyCards.length > 0) {
         for (const c of localOnlyCards) {
           try { await NotionAPI.saveCard(c); } catch (e) { /* best-effort */ }
         }
       }
     } else if (cards.length > 0) {
-      // Notion is empty but local has data — push local to Notion
+      // Database is empty but local has data — push local to Database
       await NotionAPI.syncAll(cards);
     }
     updateSyncStatus('connected');
     updateDashboard();
   } catch (e) {
-    console.warn('Notion sync failed:', e);
+    console.warn('Database sync failed:', e);
     updateSyncStatus('error');
   }
 }
@@ -318,7 +318,7 @@ async function saveCardToNotion(card) {
     await NotionAPI.saveCard(card);
     updateSyncStatus('connected');
   } catch (e) {
-    console.warn('Save to Notion failed:', e);
+    console.warn('Save to Database failed:', e);
     updateSyncStatus('error');
     showToast('⚠️ 儲存失敗: ' + (e.message || String(e)).substring(0, 50));
   }
@@ -331,7 +331,7 @@ async function deleteCardFromNotion(id) {
     await NotionAPI.deleteCard(id);
     updateSyncStatus('connected');
   } catch (e) {
-    console.warn('Delete from Notion failed:', e);
+    console.warn('Delete from Database failed:', e);
     updateSyncStatus('error');
   }
 }
@@ -411,7 +411,7 @@ function loadStreak() {
 function saveStreak(streak, pushToNotion = true) {
   localStorage.setItem('crystal_learning_streak', JSON.stringify(streak));
   if (pushToNotion && getNotionProxyUrl()) {
-    // Store streak as a hidden Notion card so it syncs across devices
+    // Store streak as a hidden Database card so it syncs across devices
     const streakCard = {
       id: STREAK_CARD_ID,
       word: '__streak__',
@@ -1135,7 +1135,7 @@ function handleRating(rating) {
   originalCard.reviewCount++;
   saveCardsToLocal();
 
-  // Sync to Notion in background
+  // Sync to Database in background
   saveCardToNotion(originalCard);
 
   // Animate to next card
@@ -1554,7 +1554,7 @@ function initSettings() {
       syncFromNotion();
     } else {
       updateSyncStatus('offline');
-      showToast('已清除 Notion 連線');
+      showToast('已清除資料庫連線');
     }
   });
 
@@ -1562,12 +1562,12 @@ function initSettings() {
   $('#syncNowBtn').addEventListener('click', async () => {
     const url = urlInput.value.trim();
     if (!url) {
-      showToast('請先填入 Proxy URL');
+      showToast('⚠️ 未設定資料庫網址，無法上傳');
       return;
     }
     setNotionProxyUrl(url);
     modal.classList.remove('active');
-    showLoading('正在同步資料到 Notion...');
+    showLoading('正在同步資料到 Database...');
 
     try {
       updateSyncStatus('syncing');
