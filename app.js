@@ -889,8 +889,10 @@ function initAddForm() {
     // Show toast
     showToast(`「${word}」已成功加入字庫！`);
 
-    // Sync to Notion (Await to prevent Safari iOS aggressive background termination)
-    await saveCardToNotion(newCard);
+    // Decouple network request from form submit lifecycle to prevent iOS Safari cancellation
+    setTimeout(() => {
+      saveCardToNotion(newCard);
+    }, 100);
   });
 }
 
@@ -1467,10 +1469,12 @@ function initModal() {
     saveCardsToLocal();
     renderLibrary();
     showToast('卡片已更新');
-
-    // Await to prevent Safari termination
-    await saveCardToNotion(card);
     $('#editModal').classList.remove('active');
+
+    // Decouple from submit event lifecycle
+    setTimeout(() => {
+      saveCardToNotion(card);
+    }, 100);
 
     // Offer to delete old Drive audio if it changed and old file is from our system
     if (oldFileId && oldFileId !== newFileId && !isAudioSharedWithOtherCards(oldFileId, id)) {
