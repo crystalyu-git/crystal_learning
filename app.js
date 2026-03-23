@@ -22,7 +22,7 @@ const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
 // ── Database Proxy API URL ──
-const DEFAULT_NOTION_URL = 'https://script.google.com/macros/s/AKfycbxSkf67lh47GWCGg3JI7xhkcDpaT3atAc60UufcfFQ-YRkHBrBqnihZX5cplj8WOnOsgA/exec';
+const DEFAULT_NOTION_URL = 'https://script.google.com/macros/s/AKfycbyi3PtLL5wwEdx2feSYHiaRC0FrF-9YXI3P-WXdfVVg0Bmz3ClOs5JKurwkaz69Fw9POA/exec';
 // Old deprecated URL — auto-migrate if still stored on this device
 const _OLD_NOTION_URL = 'https://script.google.com/macros/s/AKfycbwYDvfHI5XNMhwmF8v4KC7hCOs_xHQXNjelVriO5cpWOu0lxduFcBa40Ex6-CPwWF2q/exec';
 (function migrateNotionUrl() {
