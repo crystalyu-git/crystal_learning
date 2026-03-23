@@ -879,8 +879,8 @@ function initAddForm() {
     // Show toast
     showToast(`「${word}」已成功加入字庫！`);
 
-    // Sync to Notion in background
-    saveCardToNotion(newCard);
+    // Sync to Notion (Await to prevent Safari iOS aggressive background termination)
+    await saveCardToNotion(newCard);
   });
 }
 
@@ -1374,7 +1374,9 @@ function initModal() {
       saveCardsToLocal();
       renderLibrary();
       showToast('卡片已刪除');
-      deleteCardFromNotion(deleteTargetId);
+
+      // Await to ensure mobile browsers don't kill the request
+      await deleteCardFromNotion(deleteTargetId);
 
       // Silently delete Drive image if applicable (no confirm dialog)
       if (deletedCard && deletedCard.imageUrl) {
@@ -1445,7 +1447,9 @@ function initModal() {
     saveCardsToLocal();
     renderLibrary();
     showToast('卡片已更新');
-    saveCardToNotion(card);
+
+    // Await to prevent Safari termination
+    await saveCardToNotion(card);
     $('#editModal').classList.remove('active');
 
     // Offer to delete old Drive audio if it changed and old file is from our system
