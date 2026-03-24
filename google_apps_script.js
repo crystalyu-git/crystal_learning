@@ -76,8 +76,10 @@ function doPost(e) {
                 return uploadAudio(body.base64Data, body.filename, body.mimeType, body.lang);
             case 'deleteAudio':
                 return deleteAudio(body.fileId);
-            case 'performOCR':
+            case 'ocrImage':
                 return performOCR(body.base64Data, body.mimeType);
+            case 'uploadImage':
+                return uploadImage(body.base64Data, body.filename, body.mimeType, body.lang);
             default:
                 return jsonResponse({ success: false, error: 'Unknown action' });
         }
@@ -243,6 +245,33 @@ function deleteAudio(fileId) {
         return jsonResponse({ success: true });
     } catch (error) {
         return jsonResponse({ success: false, error: 'Delete error: ' + error.toString() });
+    }
+}
+
+// 上傳圖片到 Google Drive /img/ 子目錄
+function uploadImage(base64Data, filename, mimeType, lang) {
+    try {
+        const FOLDER_NAME = 'Crystal_Learning';
+        const IMG_SUBFOLDER = 'img';
+
+        let rootFolder;
+        const rootFolders = DriveApp.getFoldersByName(FOLDER_NAME);
+        rootFolder = rootFolders.hasNext() ? rootFolders.next() : DriveApp.createFolder(FOLDER_NAME);
+
+        let imgFolder;
+        const imgFolders = rootFolder.getFoldersByName(IMG_SUBFOLDER);
+        imgFolder = imgFolders.hasNext() ? imgFolders.next() : rootFolder.createFolder(IMG_SUBFOLDER);
+
+        const decoded = Utilities.base64Decode(base64Data);
+        const blob = Utilities.newBlob(decoded, mimeType || 'image/jpeg', filename || 'image.jpg');
+        const file = imgFolder.createFile(blob);
+        file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+        const fileId = file.getId();
+        const shareUrl = `https://drive.google.com/file/d/${fileId}/view`;
+        return jsonResponse({ success: true, url: shareUrl, fileId: fileId });
+    } catch (error) {
+        return jsonResponse({ success: false, error: 'Image upload error: ' + error.toString() });
     }
 }
 

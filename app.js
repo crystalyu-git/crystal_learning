@@ -287,18 +287,10 @@ async function syncFromNotion() {
         }
       }
 
-      // ── Merge real cards (exclude streak meta-card) ──
+      // ── 以資料庫為主（Source of Truth）全數覆寫本地端 ──
       const realNotionCards = notionCards.filter(c => c.id !== STREAK_CARD_ID);
-      const notionIds = new Set(realNotionCards.map(c => c.id));
-      const localOnlyCards = cards.filter(c => c.id && c.id !== STREAK_CARD_ID && !notionIds.has(c.id));
-      cards = [...realNotionCards, ...localOnlyCards];
+      cards = [...realNotionCards];
       saveCardsToLocal();
-      // Push any local-only cards to Database
-      if (localOnlyCards.length > 0) {
-        for (const c of localOnlyCards) {
-          try { await NotionAPI.saveCard(c); } catch (e) { /* best-effort */ }
-        }
-      }
     } else if (cards.length > 0) {
       // Database is empty but local has data — push local to Database
       await NotionAPI.syncAll(cards);
