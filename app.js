@@ -550,18 +550,62 @@ function initLangToggle() {
   // Deprecated toggle no longer used; renderLangFilterBars handles this now
 }
 
+// 讀取語言選單的有效值（處理「自訂類別...」的情況）
+function getLangValue(id) {
+  const sel = $(`#${id}`);
+  if (!sel) return '';
+  if (sel.tagName === 'SELECT' && sel.value === '__custom__') {
+    return $(`#${id}Custom`)?.value.trim() || '';
+  }
+  return sel.value;
+}
+
+// 寫入語言選單（若為自訂值則自動切換到自訂輸入框）
+function setLangValue(id, value) {
+  const sel = $(`#${id}`);
+  const custom = $(`#${id}Custom`);
+  if (!sel || !value) return;
+  const knownOpt = [...sel.options].find(o => o.value === value);
+  if (knownOpt) {
+    sel.value = value;
+    if (custom) custom.style.display = 'none';
+  } else {
+    sel.value = '__custom__';
+    if (custom) { custom.style.display = ''; custom.value = value; }
+  }
+  sel.dispatchEvent(new Event('change'));
+}
+
+// 初始化語言選單的自訂輸入切換邏輯
+function initLangSelectCustom(selectId) {
+  const sel = $(`#${selectId}`);
+  const custom = $(`#${selectId}Custom`);
+  if (!sel || !custom) return;
+  sel.addEventListener('change', () => {
+    const isCustom = sel.value === '__custom__';
+    custom.style.display = isCustom ? '' : 'none';
+    // 若是使用者手動點選「自訂類別...」（非程式設定），清空並聚焦
+    if (isCustom && !custom.value) custom.focus();
+    // 儲存語言偏好
+    if (selectId === 'inputLang') {
+      const val = getLangValue(selectId);
+      if (val) localStorage.setItem('crystal_last_lang', val);
+    }
+  });
+  custom.addEventListener('input', () => {
+    if (selectId === 'inputLang') {
+      const val = custom.value.trim();
+      if (val) localStorage.setItem('crystal_last_lang', val);
+    }
+  });
+}
+
 function updateLanguageContextText() {
+  initLangSelectCustom('inputLang');
   // Default add-card lang: restore from localStorage
   const lastLang = localStorage.getItem('crystal_last_lang');
   if (lastLang && $('#inputLang')) {
-    $('#inputLang').value = lastLang;
-    $('#inputLang').dispatchEvent(new Event('change'));
-  }
-  // Bind change to save preference
-  if ($('#inputLang')) {
-    $('#inputLang').addEventListener('change', (e) => {
-      localStorage.setItem('crystal_last_lang', e.target.value);
-    });
+    setLangValue('inputLang', lastLang);
   }
 }
 
@@ -883,7 +927,7 @@ function initAddForm() {
     const example = $('#inputExample').value.trim();
     const category = $('#inputCategory').value.trim();
     const audioUrl = $('#inputAudioUrl').value.trim();
-    const lang = $('#inputLang').value;
+    const lang = getLangValue('inputLang');
     const imageUrl = _addImageUrl || '';
 
     if (!word) return;
@@ -917,8 +961,7 @@ function initAddForm() {
     // Restore last-used language (form reset reverts to HTML default)
     const lastLang = localStorage.getItem('crystal_last_lang');
     if (lastLang && $('#inputLang')) {
-      $('#inputLang').value = lastLang;
-      $('#inputLang').dispatchEvent(new Event('change'));
+      setLangValue('inputLang', lastLang);
     }
     // Also clear status texts
     const addStatus = $('#addAudioStatus');
@@ -1371,8 +1414,7 @@ function openEditModal(id) {
   // Use tag-input to populate category chips
   _editTagInput?.setTags(card.category || '');
   $('#editAudioUrl').value = card.audioUrl || '';
-  $('#editLang').value = getLangLabel(card.lang) || card.lang || '';
-  $('#editLang').dispatchEvent(new Event('change'));
+  setLangValue('editLang', getLangLabel(card.lang) || card.lang || '');
   // Populate imageUrl hidden field
   $('#editImageUrl').value = card.imageUrl || '';
   _editImageUrl = card.imageUrl || '';
@@ -1511,7 +1553,7 @@ function initModal() {
       return;
     }
     card.audioUrl = newAudioUrl;
-    card.lang = $('#editLang').value;
+    card.lang = getLangValue('editLang');
 
     saveCardsToLocal();
     renderLibrary();
@@ -1583,6 +1625,13 @@ function initSettings() {
     document.documentElement.style.setProperty('--accent-secondary', secondary);
     document.documentElement.style.setProperty('--text-accent', hex);
     document.documentElement.style.setProperty('--gradient-primary', hex);
+  });
+
+  // Theme Presets
+  $('#presetDeepPurple')?.addEventListener('click', () => {
+    const preset = { bgPrimary: '#4a4e69', accentPrimary: '#9a8c98' };
+    applyTheme(preset);
+    showToast('已套用「深遂紫」配色');
   });
 
   // Theme Reset
@@ -1829,7 +1878,7 @@ function initAudioActions() {
     const fileInput = $(`#${fileInputId}`);
     const statusEl = $(`#${statusId}`);
     const urlInput = $(`#${audioUrlInputId}`);
-    const getLang = () => ($(`#${langSelectId}`) ? $(`#${langSelectId}`).value : 'other');
+    const getLang = () => getLangValue(langSelectId) || 'other';
 
     if (!uploadBtn || !recordBtn || !fileInput) return;
 
@@ -2313,7 +2362,7 @@ function initSmartInput() {
     translateBtn.addEventListener('click', async () => {
       const word = $('#inputWord').value.trim();
       if (!word) { showToast('請先填寫生字'); return; }
-      const lang = $('#inputLang').value;
+      const lang = getLangValue('inputLang');
       await autoTranslate(word, lang, translateStatus);
     });
   }
@@ -2325,7 +2374,7 @@ function initSmartInput() {
     editTranslateBtn.addEventListener('click', async () => {
       const word = $('#editWord').value.trim();
       if (!word) { showToast('請先填寫生字'); return; }
-      const lang = ($('#editLang') ? $('#editLang').value : null) || $('#inputLang').value;
+      const lang = getLangValue('editLang') || getLangValue('inputLang');
       const origFill = (text) => { $('#editMeaning').value = text; };
       // 借用 autoTranslate，但 target 是 editMeaning
       editTranslateStatus.style.display = 'block';
@@ -2358,7 +2407,7 @@ function initSmartInput() {
   const inputLang = $('#inputLang');
   if (autoHiraganaBtn && inputLang) {
     const toggleAddHiraganaBtn = () => {
-      autoHiraganaBtn.style.display = getLangCode(inputLang.value) === 'ja-JP' ? 'inline-flex' : 'none';
+      autoHiraganaBtn.style.display = getLangCode(getLangValue('inputLang')) === 'ja-JP' ? 'inline-flex' : 'none';
     };
     inputLang.addEventListener('change', toggleAddHiraganaBtn);
     toggleAddHiraganaBtn(); // init
@@ -2377,8 +2426,9 @@ function initSmartInput() {
   const editAutoHiraganaBtn = $('#editAutoHiraganaBtn');
   const editLang = $('#editLang');
   if (editAutoHiraganaBtn && editLang) {
+    initLangSelectCustom('editLang');
     const toggleEditHiraganaBtn = () => {
-      editAutoHiraganaBtn.style.display = getLangCode(editLang.value) === 'ja-JP' ? 'inline-flex' : 'none';
+      editAutoHiraganaBtn.style.display = getLangCode(getLangValue('editLang')) === 'ja-JP' ? 'inline-flex' : 'none';
     };
     editLang.addEventListener('change', toggleEditHiraganaBtn);
     toggleEditHiraganaBtn(); // init
@@ -2401,7 +2451,7 @@ function initSmartInput() {
     ocrInput.addEventListener('change', async () => {
       const file = ocrInput.files[0];
       if (!file) return;
-      const lang = $('#inputLang').value;
+      const lang = getLangValue('inputLang');
       await runOCR(file, lang);
       ocrInput.value = '';
     });
@@ -2416,7 +2466,7 @@ function initSmartInput() {
     meaningImageInput.addEventListener('change', async () => {
       const file = meaningImageInput.files[0];
       if (!file) return;
-      const lang = $('#inputLang').value;
+      const lang = getLangValue('inputLang');
       _addImageUrl = await uploadImageToDrive(file, lang, meaningImageStatus) || '';
       meaningImageInput.value = '';
     });
@@ -2431,7 +2481,7 @@ function initSmartInput() {
     editMeaningImageInput.addEventListener('change', async () => {
       const file = editMeaningImageInput.files[0];
       if (!file) return;
-      const lang = ($('#editLang')?.value) || $('#inputLang').value;
+      const lang = getLangValue('editLang') || getLangValue('inputLang');
       _editImageUrl = await uploadImageToDrive(file, lang, editMeaningImageStatus) || '';
       editMeaningImageInput.value = '';
       if (_editImageUrl) {
