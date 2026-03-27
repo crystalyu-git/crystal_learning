@@ -977,7 +977,7 @@ function initAddForm() {
     updateCategoryDatalist();
 
     // Show toast
-    showToast(`「${word}」已成功加入字庫！`);
+    showToast(`「${word}」已成功加入知識庫！`);
 
     // Decouple network request from form submit lifecycle to prevent iOS Safari cancellation
     setTimeout(() => {
@@ -1323,7 +1323,7 @@ function renderLibrary() {
     grid.innerHTML = `
       <div class="empty-state" id="emptyLibrary" style="grid-column: 1 / -1;">
         <div class="empty-icon">${activeCards.length === 0 ? '📭' : '🔍'}</div>
-        <h3>${activeCards.length === 0 ? '此語言的字庫是空的' : '找不到結果'}</h3>
+        <h3>${activeCards.length === 0 ? '此語言的知識庫是空的' : '找不到結果'}</h3>
         <p>${activeCards.length === 0 ? '開始新增字句來建立你的學習庫吧！' : '試試其他搜尋關鍵字'}</p>
       </div>`;
     return;
@@ -1632,6 +1632,12 @@ function initSettings() {
     const preset = { bgPrimary: '#3A2C37', accentPrimary: '#5E5F87' };
     applyTheme(preset);
     showToast('已套用「深遂紫」配色');
+  });
+
+  $('#presetMidnightBlue')?.addEventListener('click', () => {
+    const preset = { bgPrimary: '#14213d', accentPrimary: '#fca311' };
+    applyTheme(preset);
+    showToast('已套用「深夜藍」配色');
   });
 
   // Theme Reset

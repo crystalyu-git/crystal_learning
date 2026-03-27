@@ -60,7 +60,7 @@
                     <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
                     <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
                 </svg>
-                <span>字庫</span>
+                <span>知識庫</span>
             </button>
             <div class="nav-divider"></div>
 
@@ -213,7 +213,7 @@
             <div class="view-header">
                 <div>
                     <h1 class="view-title">新增字句 ➕</h1>
-                    <p class="view-subtitle">加入新的學習內容到字庫</p>
+                    <p class="view-subtitle">加入新的學習內容到知識庫</p>
                 </div>
             </div>
 
@@ -416,7 +416,7 @@
                             <line x1="12" y1="5" x2="12" y2="19" />
                             <line x1="5" y1="12" x2="19" y2="12" />
                         </svg>
-                        加入字庫
+                        加入知識庫
                     </button>
                 </form>
 
@@ -426,7 +426,7 @@
                         <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
                         <polyline points="22 4 12 14.01 9 11.01" />
                     </svg>
-                    <span id="toastMessage">已成功加入字庫！</span>
+                    <span id="toastMessage">已成功加入知識庫！</span>
                 </div>
             </div>
         </section>
@@ -567,7 +567,7 @@
         <section class="view" id="libraryView">
             <div class="view-header">
                 <div>
-                    <h1 class="view-title">字庫 📚</h1>
+                    <h1 class="view-title">知識庫 📚</h1>
                     <p class="view-subtitle">管理你所有的學習卡片</p>
                 </div>
             </div>
@@ -590,7 +590,7 @@
             <div class="library-grid" id="libraryGrid">
                 <div class="empty-state" id="emptyLibrary">
                     <div class="empty-icon">📭</div>
-                    <h3>字庫是空的</h3>
+                    <h3>知識庫是空的</h3>
                     <p>開始新增字句來建立你的學習庫吧！</p>
                 </div>
             </div>
@@ -628,6 +628,12 @@
                         style="display:flex;align-items:center;gap:0.4rem;padding:0.35rem 0.75rem;border-radius:999px;border:1px solid var(--border-light);background:var(--bg-glass);color:var(--text-primary);font-size:0.8rem;cursor:pointer;">
                         <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:linear-gradient(135deg,#3A2C37,#5E5F87);flex-shrink:0;"></span>
                         深遂紫
+                    </button>
+                    <button type="button" class="theme-preset-btn" id="presetMidnightBlue"
+                        title="深夜藍：深海藍底 + 琥珀橙強調色"
+                        style="display:flex;align-items:center;gap:0.4rem;padding:0.35rem 0.75rem;border-radius:999px;border:1px solid var(--border-light);background:var(--bg-glass);color:var(--text-primary);font-size:0.8rem;cursor:pointer;">
+                        <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:linear-gradient(135deg,#14213d,#fca311);flex-shrink:0;"></span>
+                        深夜藍
                     </button>
                 </div>
                 <div class="color-picker-group"

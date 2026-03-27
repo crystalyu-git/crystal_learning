@@ -628,6 +628,8 @@ body {
   font-size: 0.95rem;
   transition: all var(--transition-fast);
   outline: none;
+  min-height: 3rem;
+  box-sizing: border-box;
 }
 
 .form-input::placeholder {
@@ -1396,7 +1398,7 @@ body {
 }
 
 .library-card.level-0::before {
-  background: var(--accent-danger);
+  background: var(--accent-primary);
 }
 
 .library-card.level-1::before {
