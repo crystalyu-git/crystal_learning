@@ -1629,7 +1629,7 @@ function initSettings() {
 
   // Theme Presets
   $('#presetDeepPurple')?.addEventListener('click', () => {
-    const preset = { bgPrimary: '#4a4e69', accentPrimary: '#9a8c98' };
+    const preset = { bgPrimary: '#3A2C37', accentPrimary: '#5E5F87' };
     applyTheme(preset);
     showToast('已套用「深遂紫」配色');
   });
