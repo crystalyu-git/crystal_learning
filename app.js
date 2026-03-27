@@ -111,7 +111,7 @@ function applyTheme(theme) {
     root.style.setProperty('--accent-primary', theme.accentPrimary);
     root.style.setProperty('--accent-secondary', secondary);
     root.style.setProperty('--text-accent', theme.accentPrimary);
-    root.style.setProperty('--gradient-primary', `linear-gradient(135deg, ${theme.accentPrimary} 0%, ${secondary} 100%)`);
+    root.style.setProperty('--gradient-primary', theme.accentPrimary);
     if ($('#colorAccent')) $('#colorAccent').value = theme.accentPrimary;
   } else {
     root.style.removeProperty('--accent-primary');
@@ -149,8 +149,48 @@ function saveTheme(theme) {
   localStorage.setItem('crystal_learning_theme', JSON.stringify(theme));
 }
 
+// ── YouTube IFrame API Support ──
+let ytPlayer = null;
+let ytPlayerReady = false;
+let ytCurrentVideoId = null;
+
+function loadYouTubeAPI() {
+  if (window.YT) return;
+  const tag = document.createElement('script');
+  tag.src = 'https://www.youtube.com/iframe_api';
+  const firstScriptTag = document.getElementsByTagName('script')[0];
+  if (firstScriptTag) {
+    firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+  } else {
+    document.head.appendChild(tag);
+  }
+}
+
+window.onYouTubeIframeAPIReady = function() {
+  const div = document.createElement('div');
+  div.id = 'yt-player-container';
+  div.style.display = 'none';
+  document.body.appendChild(div);
+  
+  ytPlayer = new YT.Player('yt-player-container', {
+    height: '0',
+    width: '0',
+    videoId: '',
+    events: {
+      'onReady': () => { ytPlayerReady = true; }
+    }
+  });
+};
+
+function extractYouTubeId(url) {
+  const regExp = /^.*(youtu\.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+  const match = url.match(regExp);
+  return (match && match[2].length === 11) ? match[2] : null;
+}
+
 // ── Initialize ──
 document.addEventListener('DOMContentLoaded', async () => {
+  loadYouTubeAPI();
   loadTheme();
   loadCardsFromLocal();
   initParticles();
@@ -420,10 +460,25 @@ function saveStreak(streak, pushToNotion = true) {
 // ── Language Filter System ──
 const LANG_LABELS = {
   'en-US': 'English (美式)', 'en-GB': 'English (英式)',
-  'ja-JP': '日本語', 'zh-TW': '中文（繁體）', 'zh-CN': '中文（簡體）',
+  'ja-JP': '日本語', 'zh-TW': '練心',
   'ko-KR': '한국어', 'fr-FR': 'Français', 'de-DE': 'Deutsch',
   'es-ES': 'Español', 'th-TH': 'ภาษาไทย', 'vi-VN': 'Tiếng Việt',
 };
+
+// 將顯示名稱（或 BCP-47 代碼）轉回 BCP-47 代碼，自訂類別回傳 null
+const DISPLAY_TO_LANG = {
+  'English (美式)': 'en-US', 'English (英式)': 'en-GB',
+  '日本語': 'ja-JP', '한국어': 'ko-KR', 'Français': 'fr-FR',
+  'Deutsch': 'de-DE', 'Español': 'es-ES', 'Italiano': 'it-IT',
+  'Português': 'pt-BR', 'ภาษาไทย': 'th-TH', 'Tiếng Việt': 'vi-VN',
+  // 練心 intentionally omitted — no TTS
+};
+
+function getLangCode(lang) {
+  if (!lang) return null;
+  if (LANG_LABELS[lang]) return lang;       // already a BCP-47 code
+  return DISPLAY_TO_LANG[lang] || null;     // display name → code, or null for custom
+}
 
 function getLangLabel(lang) {
   return LANG_LABELS[lang] || lang;
@@ -1316,7 +1371,7 @@ function openEditModal(id) {
   // Use tag-input to populate category chips
   _editTagInput?.setTags(card.category || '');
   $('#editAudioUrl').value = card.audioUrl || '';
-  $('#editLang').value = card.lang || 'en-US';
+  $('#editLang').value = getLangLabel(card.lang) || card.lang || '';
   $('#editLang').dispatchEvent(new Event('change'));
   // Populate imageUrl hidden field
   $('#editImageUrl').value = card.imageUrl || '';
@@ -1498,6 +1553,16 @@ function initSettings() {
   // Open settings
   $('#settingsBtn').addEventListener('click', () => {
     urlInput.value = getNotionProxyUrl();
+    // Refresh color pickers from saved theme
+    const savedTheme = localStorage.getItem('crystal_learning_theme');
+    try {
+      const theme = savedTheme ? JSON.parse(savedTheme) : {};
+      $('#colorBgPrimary').value = theme.bgPrimary || '#0a0a1a';
+      $('#colorAccent').value = theme.accentPrimary || '#6366f1';
+    } catch (e) {
+      $('#colorBgPrimary').value = '#0a0a1a';
+      $('#colorAccent').value = '#6366f1';
+    }
     modal.classList.add('active');
   });
 
@@ -1517,7 +1582,7 @@ function initSettings() {
     document.documentElement.style.setProperty('--accent-primary', hex);
     document.documentElement.style.setProperty('--accent-secondary', secondary);
     document.documentElement.style.setProperty('--text-accent', hex);
-    document.documentElement.style.setProperty('--gradient-primary', `linear-gradient(135deg, ${hex} 0%, ${secondary} 100%)`);
+    document.documentElement.style.setProperty('--gradient-primary', hex);
   });
 
   // Theme Reset
@@ -1689,13 +1754,42 @@ document.addEventListener('keydown', (e) => {
 
 // ── Audio Helpers ──
 function playOrSpeak(card, defaultText, lang, btnElement) {
+  const langCode = getLangCode(lang);
   if (card.audioUrl) {
-    playGoogleDriveAudio(card.audioUrl, btnElement, () => {
-      // Fallback to TTS if audio fails
-      speakText(defaultText, lang, btnElement);
-    });
+    const isDriveUrl = /drive\.google\.com|docs\.google\.com/.test(card.audioUrl);
+    const ytId = extractYouTubeId(card.audioUrl);
+
+    if (isDriveUrl) {
+      playGoogleDriveAudio(card.audioUrl, btnElement, () => {
+        if (langCode) speakText(defaultText, langCode, btnElement);
+      });
+      return;
+    }
+
+    if (ytId) {
+      window.open(card.audioUrl, '_blank');
+      return;
+    }
+
+    if (card.audioUrl.match(/\.(mp3|wav|ogg|m4a|aac)$/i)) {
+      if (btnElement) btnElement.classList.add('speaking');
+      const audio = new Audio(card.audioUrl);
+      audio.onended = () => { if (btnElement) btnElement.classList.remove('speaking'); };
+      audio.onerror = () => {
+        if (btnElement) btnElement.classList.remove('speaking');
+        if (langCode) speakText(defaultText, langCode, btnElement);
+      };
+      audio.play().catch(e => {
+        if (btnElement) btnElement.classList.remove('speaking');
+        if (langCode) speakText(defaultText, langCode, btnElement);
+      });
+      return;
+    }
+
+    // Default fallback: open any unstructured link in a new tab
+    window.open(card.audioUrl, '_blank');
   } else {
-    speakText(defaultText, lang, btnElement);
+    if (langCode) speakText(defaultText, langCode, btnElement);
   }
 }
 
@@ -1896,20 +1990,20 @@ function playDirectAudio(url, btnElement, onErrorCallback) {
 // Map card lang to MyMemory language code
 const MYMEMORY_LANG_MAP = {
   'en-US': 'en', 'en-GB': 'en', 'ja-JP': 'ja', 'zh-TW': 'zh-TW',
-  'zh-CN': 'zh-CN', 'ko-KR': 'ko', 'fr-FR': 'fr', 'de-DE': 'de',
-  'es-ES': 'es', 'it-IT': 'it', 'pt-BR': 'pt', 'th-TH': 'th', 'vi-VN': 'vi',
+  'ko-KR': 'ko', 'fr-FR': 'fr', 'de-DE': 'de', 'es-ES': 'es',
+  'it-IT': 'it', 'pt-BR': 'pt', 'th-TH': 'th', 'vi-VN': 'vi',
 };
 
 // Map card lang to Tesseract language code
 const TESSERACT_LANG_MAP = {
   'en-US': 'eng', 'en-GB': 'eng', 'ja-JP': 'jpn', 'zh-TW': 'chi_tra',
-  'zh-CN': 'chi_sim', 'ko-KR': 'kor', 'fr-FR': 'fra', 'de-DE': 'deu',
-  'es-ES': 'spa', 'it-IT': 'ita', 'pt-BR': 'por', 'th-TH': 'tha', 'vi-VN': 'vie',
+  'ko-KR': 'kor', 'fr-FR': 'fra', 'de-DE': 'deu', 'es-ES': 'spa',
+  'it-IT': 'ita', 'pt-BR': 'por', 'th-TH': 'tha', 'vi-VN': 'vie',
 };
 
 async function autoTranslate(word, fromLang, statusEl) {
   if (!word) return;
-  const from = MYMEMORY_LANG_MAP[fromLang] || 'en';
+  const from = MYMEMORY_LANG_MAP[getLangCode(fromLang) || fromLang] || 'en';
   const to = 'zh-TW';
 
   statusEl.style.display = 'block';
@@ -2237,7 +2331,7 @@ function initSmartInput() {
       editTranslateStatus.style.display = 'block';
       editTranslateStatus.textContent = '⏳ 翻譯中...';
       editTranslateStatus.className = 'audio-status uploading';
-      const from = MYMEMORY_LANG_MAP[lang] || 'en';
+      const from = MYMEMORY_LANG_MAP[getLangCode(lang) || lang] || 'en';
       try {
         const res = await fetch(
           `https://api.mymemory.translated.net/get?q=${encodeURIComponent(word)}&langpair=${from}|zh-TW`
@@ -2264,7 +2358,7 @@ function initSmartInput() {
   const inputLang = $('#inputLang');
   if (autoHiraganaBtn && inputLang) {
     const toggleAddHiraganaBtn = () => {
-      autoHiraganaBtn.style.display = inputLang.value === 'ja-JP' ? 'inline-flex' : 'none';
+      autoHiraganaBtn.style.display = getLangCode(inputLang.value) === 'ja-JP' ? 'inline-flex' : 'none';
     };
     inputLang.addEventListener('change', toggleAddHiraganaBtn);
     toggleAddHiraganaBtn(); // init
@@ -2284,7 +2378,7 @@ function initSmartInput() {
   const editLang = $('#editLang');
   if (editAutoHiraganaBtn && editLang) {
     const toggleEditHiraganaBtn = () => {
-      editAutoHiraganaBtn.style.display = editLang.value === 'ja-JP' ? 'inline-flex' : 'none';
+      editAutoHiraganaBtn.style.display = getLangCode(editLang.value) === 'ja-JP' ? 'inline-flex' : 'none';
     };
     editLang.addEventListener('change', toggleEditHiraganaBtn);
     toggleEditHiraganaBtn(); // init

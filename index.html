@@ -23,15 +23,9 @@
         <div class="nav-brand">
             <div class="brand-icon">
                 <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-                    <path d="M14 2L2 8L14 14L26 8L14 2Z" stroke="url(#grad1)" stroke-width="2" fill="none" />
-                    <path d="M2 20L14 26L26 20" stroke="url(#grad1)" stroke-width="2" fill="none" />
-                    <path d="M2 14L14 20L26 14" stroke="url(#grad1)" stroke-width="2" fill="none" />
-                    <defs>
-                        <linearGradient id="grad1" x1="2" y1="2" x2="26" y2="26">
-                            <stop offset="0%" stop-color="var(--accent-primary, #6366f1)" />
-                            <stop offset="100%" stop-color="var(--accent-secondary, #a855f7)" />
-                        </linearGradient>
-                    </defs>
+                    <path d="M14 2L2 8L14 14L26 8L14 2Z" stroke="var(--accent-primary)" stroke-width="2" fill="none" />
+                    <path d="M2 20L14 26L26 20" stroke="var(--accent-primary)" stroke-width="2" fill="none" />
+                    <path d="M2 14L14 20L26 14" stroke="var(--accent-primary)" stroke-width="2" fill="none" />
                 </svg>
             </div>
             <span class="brand-text">Crystal Learning</span>
@@ -234,23 +228,23 @@
                                 <path
                                     d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
                             </svg>
-                            發音語言
+                            發音語言 / 類別
                         </label>
-                        <select id="inputLang" class="form-input">
-                            <option value="en-US">English (美式)</option>
-                            <option value="en-GB">English (英式)</option>
-                            <option value="zh-TW">中文（繁體）</option>
-                            <option value="zh-CN">中文（簡體）</option>
-                            <option value="ja-JP">日本語</option>
-                            <option value="ko-KR">한국어</option>
-                            <option value="fr-FR">Français</option>
-                            <option value="de-DE">Deutsch</option>
-                            <option value="es-ES">Español</option>
-                            <option value="it-IT">Italiano</option>
-                            <option value="pt-BR">Português</option>
-                            <option value="th-TH">ภาษาไทย</option>
-                            <option value="vi-VN">Tiếng Việt</option>
-                        </select>
+                        <input type="text" id="inputLang" class="form-input" list="langList" autocomplete="off" placeholder="選擇或輸入類別...">
+                        <datalist id="langList">
+                            <option value="English (美式)"></option>
+                            <option value="English (英式)"></option>
+                            <option value="練心"></option>
+                            <option value="日本語"></option>
+                            <option value="한국어"></option>
+                            <option value="Français"></option>
+                            <option value="Deutsch"></option>
+                            <option value="Español"></option>
+                            <option value="Italiano"></option>
+                            <option value="Português"></option>
+                            <option value="ภาษาไทย"></option>
+                            <option value="Tiếng Việt"></option>
+                        </datalist>
                     </div>
 
                     <div class="form-group">
@@ -759,22 +753,8 @@
                     <input type="hidden" id="editImageUrl">
                 </div>
                 <div class="form-group">
-                    <label for="editLang" class="form-label">發音語言</label>
-                    <select id="editLang" class="form-input">
-                        <option value="en-US">English (美式)</option>
-                        <option value="en-GB">English (英式)</option>
-                        <option value="zh-TW">中文（繁體）</option>
-                        <option value="zh-CN">中文（簡體）</option>
-                        <option value="ja-JP">日本語</option>
-                        <option value="ko-KR">한국어</option>
-                        <option value="fr-FR">Français</option>
-                        <option value="de-DE">Deutsch</option>
-                        <option value="es-ES">Español</option>
-                        <option value="it-IT">Italiano</option>
-                        <option value="pt-BR">Português</option>
-                        <option value="th-TH">ภาษาไทย</option>
-                        <option value="vi-VN">Tiếng Việt</option>
-                    </select>
+                    <label for="editLang" class="form-label">發音語言 / 類別</label>
+                    <input type="text" id="editLang" class="form-input" list="langList" autocomplete="off" placeholder="選擇或輸入類別...">
                 </div>
                 <div class="modal-actions">
                     <button type="button" class="modal-btn cancel" id="cancelEdit">取消</button>
