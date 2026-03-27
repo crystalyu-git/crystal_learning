@@ -486,7 +486,7 @@ function getLangLabel(lang) {
 
 function getAvailableLangs() {
   const seen = new Set();
-  cards.forEach(c => { if (c.lang) seen.add(c.lang); });
+  cards.forEach(c => { if (c.lang) seen.add(getLangLabel(c.lang)); });
   return [...seen].sort();
 }
 
@@ -543,7 +543,7 @@ function getCardsByLang() {
   // Always exclude the hidden streak meta-card from display lists
   const visible = cards.filter(c => c.id !== STREAK_CARD_ID);
   if (currentLangFilter === 'all') return visible;
-  return visible.filter(c => c.lang === currentLangFilter);
+  return visible.filter(c => getLangLabel(c.lang) === currentLangFilter);
 }
 
 function initLangToggle() {
