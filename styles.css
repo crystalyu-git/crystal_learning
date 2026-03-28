@@ -323,15 +323,15 @@ body {
 }
 
 .stat-review::before {
-  background: var(--accent-warning);
+  background: var(--accent-primary);
 }
 
 .stat-mastered::before {
-  background: var(--accent-success);
+  background: var(--accent-primary);
 }
 
 .stat-streak::before {
-  background: var(--accent-secondary);
+  background: var(--accent-primary);
 }
 
 .stat-card:hover {
@@ -350,24 +350,12 @@ body {
   flex-shrink: 0;
 }
 
-.stat-total .stat-icon {
-  background: rgba(99, 102, 241, 0.15);
-  color: #818cf8;
-}
-
-.stat-review .stat-icon {
-  background: rgba(245, 158, 11, 0.15);
-  color: #fbbf24;
-}
-
-.stat-mastered .stat-icon {
-  background: rgba(34, 197, 94, 0.15);
-  color: #4ade80;
-}
-
+.stat-total .stat-icon,
+.stat-review .stat-icon,
+.stat-mastered .stat-icon,
 .stat-streak .stat-icon {
-  background: rgba(168, 85, 247, 0.15);
-  color: #c084fc;
+  background: color-mix(in srgb, var(--accent-primary) 15%, transparent);
+  color: var(--accent-primary);
 }
 
 .stat-info {

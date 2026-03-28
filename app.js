@@ -1641,7 +1641,7 @@ function initSettings() {
   });
 
   $('#presetGreenBrown')?.addEventListener('click', () => {
-    const preset = { bgPrimary: '#7c6a0a', accentPrimary: '#babd8d' };
+    const preset = { bgPrimary: '#3a3207', accentPrimary: '#babd8d' };
     applyTheme(preset);
     showToast('已套用「綠野棕」配色');
   });
