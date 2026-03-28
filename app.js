@@ -1640,6 +1640,12 @@ function initSettings() {
     showToast('已套用「深夜藍」配色');
   });
 
+  $('#presetGreenBrown')?.addEventListener('click', () => {
+    const preset = { bgPrimary: '#7c6a0a', accentPrimary: '#babd8d' };
+    applyTheme(preset);
+    showToast('已套用「綠野棕」配色');
+  });
+
   // Theme Reset
   $('#resetThemeBtn').addEventListener('click', () => {
     localStorage.removeItem('crystal_learning_theme');
