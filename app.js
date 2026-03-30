@@ -134,6 +134,14 @@ function applyTheme(theme) {
     root.style.removeProperty('--bg-card-hover');
     if ($('#colorBgPrimary')) $('#colorBgPrimary').value = '#0a0a1a';
   }
+
+  // 文字色與玻璃效果覆蓋（淺色主題用）
+  const textVars = ['--text-primary', '--text-secondary', '--text-muted', '--bg-glass', '--border-light'];
+  const textKeys = ['textPrimary', 'textSecondary', 'textMuted', 'bgGlass', 'borderLight'];
+  textKeys.forEach((key, i) => {
+    if (theme[key]) root.style.setProperty(textVars[i], theme[key]);
+    else root.style.removeProperty(textVars[i]);
+  });
 }
 
 function loadTheme() {
@@ -1638,6 +1646,16 @@ function initSettings() {
     const preset = { bgPrimary: '#14213d', accentPrimary: '#fca311' };
     applyTheme(preset);
     showToast('已套用「深夜藍」配色');
+  });
+
+  $('#presetVibrantYellow')?.addEventListener('click', () => {
+    const preset = {
+      bgPrimary: '#f5c400', accentPrimary: '#555555',
+      textPrimary: '#4a4a4a', textSecondary: '#777777', textMuted: '#aaaaaa',
+      bgGlass: 'rgba(0,0,0,0.06)', borderLight: 'rgba(0,0,0,0.12)'
+    };
+    applyTheme(preset);
+    showToast('已套用「活力黃」配色');
   });
 
   $('#presetGreenBrown')?.addEventListener('click', () => {
