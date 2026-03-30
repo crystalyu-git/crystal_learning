@@ -1651,7 +1651,7 @@ function initSettings() {
   $('#presetVibrantYellow')?.addEventListener('click', () => {
     const preset = {
       bgPrimary: '#f5c400', accentPrimary: '#555555',
-      textPrimary: '#4a4a4a', textSecondary: '#777777', textMuted: '#aaaaaa',
+      textPrimary: '#333333', textSecondary: '#555555', textMuted: '#777777',
       bgGlass: 'rgba(0,0,0,0.06)', borderLight: 'rgba(0,0,0,0.12)'
     };
     applyTheme(preset);
