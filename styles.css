@@ -13,7 +13,7 @@
   --bg-glass: rgba(255, 255, 255, 0.04);
   --bg-glass-hover: rgba(255, 255, 255, 0.08);
 
-  --card-front-bg: rgba(99, 102, 241, 0.05);
+  --card-front-bg: color-mix(in srgb, var(--accent-primary) 5%, transparent);
   --card-back-bg: rgba(34, 197, 94, 0.05);
 
   --accent-primary: #6366f1;
@@ -120,7 +120,7 @@ body {
 .particle {
   position: absolute;
   border-radius: 50%;
-  background: rgba(99, 102, 241, 0.3);
+  background: color-mix(in srgb, var(--accent-primary) 30%, transparent);
   animation: particleFloat linear infinite;
   pointer-events: none;
 }
@@ -399,12 +399,12 @@ body {
 }
 
 .quick-action-btn.primary {
-  background: rgba(99, 102, 241, 0.12);
+  background: color-mix(in srgb, var(--accent-primary) 12%, transparent);
   border-color: var(--border-accent);
 }
 
 .quick-action-btn.primary:hover {
-  background: rgba(99, 102, 241, 0.2);
+  background: color-mix(in srgb, var(--accent-primary) 20%, transparent);
   transform: translateX(4px);
   box-shadow: var(--shadow-glow);
 }
@@ -536,8 +536,8 @@ body {
 }
 
 .schedule-count.later {
-  background: rgba(99, 102, 241, 0.15);
-  color: #818cf8;
+  background: color-mix(in srgb, var(--accent-primary) 15%, transparent);
+  color: var(--accent-primary);
 }
 
 .schedule-label {
@@ -638,7 +638,7 @@ select.form-input {
 
 .form-input:focus {
   border-color: var(--accent-primary);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-primary) 15%, transparent);
   background: rgba(255, 255, 255, 0.06);
 }
 
@@ -682,7 +682,7 @@ select.form-input {
 
 .submit-btn:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.4);
+  box-shadow: 0 4px 20px color-mix(in srgb, var(--accent-primary) 40%, transparent);
 }
 
 .submit-btn:active {
@@ -714,18 +714,18 @@ select.form-input {
   align-items: center;
   gap: 0.3rem;
   padding: 0.2rem 0.55rem;
-  background: rgba(99, 102, 241, 0.18);
-  border: 1px solid rgba(99, 102, 241, 0.35);
+  background: color-mix(in srgb, var(--accent-primary) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 35%, transparent);
   border-radius: 20px;
   font-size: 0.78rem;
-  color: #a5b4fc;
+  color: var(--accent-primary);
   white-space: nowrap;
 }
 
 .tag-chip .tag-remove {
   background: none;
   border: none;
-  color: #a5b4fc;
+  color: var(--accent-primary);
   cursor: pointer;
   padding: 0;
   font-size: 0.85rem;
@@ -763,7 +763,7 @@ select.form-input {
 }
 
 .tag-suggestion-item:hover {
-  background: rgba(99, 102, 241, 0.12);
+  background: color-mix(in srgb, var(--accent-primary) 12%, transparent);
   color: var(--text-primary);
 }
 
@@ -783,9 +783,9 @@ select.form-input {
 }
 
 .ocr-word-chip.selected {
-  background: rgba(99, 102, 241, 0.35);
-  border-color: rgba(99, 102, 241, 0.8);
-  color: #c7d2fe;
+  background: color-mix(in srgb, var(--accent-primary) 35%, transparent);
+  border-color: color-mix(in srgb, var(--accent-primary) 80%, transparent);
+  color: var(--accent-primary);
   transform: scale(1.06);
 }
 
@@ -988,10 +988,10 @@ select.form-input {
   justify-content: center;
   width: 44px;
   height: 44px;
-  border: 1px solid rgba(99, 102, 241, 0.25);
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 25%, transparent);
   border-radius: 50%;
-  background: rgba(99, 102, 241, 0.1);
-  color: #a5b4fc;
+  background: color-mix(in srgb, var(--accent-primary) 10%, transparent);
+  color: var(--accent-primary);
   cursor: pointer;
   flex-shrink: 0;
   transition: all var(--transition-normal);
@@ -1003,11 +1003,11 @@ select.form-input {
 }
 
 .speak-btn:hover {
-  background: rgba(99, 102, 241, 0.25);
-  border-color: rgba(99, 102, 241, 0.5);
-  color: #c7d2fe;
+  background: color-mix(in srgb, var(--accent-primary) 25%, transparent);
+  border-color: color-mix(in srgb, var(--accent-primary) 50%, transparent);
+  color: var(--accent-primary);
   transform: scale(1.1) translateZ(1px);
-  box-shadow: 0 0 20px rgba(99, 102, 241, 0.3);
+  box-shadow: 0 0 20px color-mix(in srgb, var(--accent-primary) 30%, transparent);
 }
 
 .speak-btn:active {
@@ -1035,11 +1035,11 @@ select.form-input {
 
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-primary) 40%, transparent);
   }
 
   50% {
-    box-shadow: 0 0 0 10px rgba(99, 102, 241, 0);
+    box-shadow: 0 0 0 10px color-mix(in srgb, var(--accent-primary) 0%, transparent);
   }
 }
 
@@ -1075,12 +1075,12 @@ select.form-input {
 }
 
 .library-speak-btn:hover {
-  background: rgba(99, 102, 241, 0.15);
-  color: #818cf8;
+  background: color-mix(in srgb, var(--accent-primary) 15%, transparent);
+  color: var(--accent-primary);
 }
 
 .library-speak-btn.speaking {
-  color: #818cf8;
+  color: var(--accent-primary);
   animation: speakPulse 0.8s ease-in-out infinite;
 }
 
@@ -1180,9 +1180,9 @@ select.form-input {
 }
 
 .rating-btn.easy:hover {
-  background: rgba(99, 102, 241, 0.12);
-  border-color: rgba(99, 102, 241, 0.3);
-  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.15);
+  background: color-mix(in srgb, var(--accent-primary) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent-primary) 30%, transparent);
+  box-shadow: 0 4px 20px color-mix(in srgb, var(--accent-primary) 15%, transparent);
 }
 
 .rating-emoji {
@@ -1323,7 +1323,7 @@ select.form-input {
 
 .search-box:focus-within {
   border-color: var(--accent-primary);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-primary) 15%, transparent);
 }
 
 .search-box svg {
@@ -1535,8 +1535,8 @@ select.form-input {
 }
 
 .library-card-level.level-3 {
-  background: rgba(99, 102, 241, 0.15);
-  color: #818cf8;
+  background: color-mix(in srgb, var(--accent-primary) 15%, transparent);
+  color: var(--accent-primary);
 }
 
 .library-card-level.level-4 {
@@ -1681,12 +1681,12 @@ select.form-input {
 
 .modal-btn.edit-save:hover {
   background: var(--accent-primary);
-  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.4);
+  box-shadow: 0 4px 20px color-mix(in srgb, var(--accent-primary) 40%, transparent);
 }
 
 .card-action-btn.edit:hover {
-  color: #818cf8;
-  background: rgba(99, 102, 241, 0.12);
+  color: var(--accent-primary);
+  background: color-mix(in srgb, var(--accent-primary) 12%, transparent);
 }
 
 /* ── Sync Status ── */
@@ -1876,7 +1876,7 @@ select.form-input {
 }
 
 .settings-modal .modal-btn.confirm:hover {
-  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.4);
+  box-shadow: 0 4px 20px color-mix(in srgb, var(--accent-primary) 40%, transparent);
 }
 
 .modal-btn.sync-now {
@@ -1918,8 +1918,8 @@ select.form-input {
 .loading-spinner {
   width: 40px;
   height: 40px;
-  border: 3px solid rgba(99, 102, 241, 0.2);
-  border-top-color: #818cf8;
+  border: 3px solid color-mix(in srgb, var(--accent-primary) 20%, transparent);
+  border-top-color: var(--accent-primary);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
