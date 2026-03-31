@@ -135,11 +135,21 @@ function applyTheme(theme) {
     if ($('#colorBgPrimary')) $('#colorBgPrimary').value = '#0a0a1a';
   }
 
-  // 文字色與玻璃效果覆蓋（淺色主題用）
+  // 文字色與玻璃效果覆蓋（淺色主題自動偵測）
+  const isLightBg = (() => {
+    if (!theme.bgPrimary) return false;
+    const hex = theme.bgPrimary.replace('#', '');
+    const r = parseInt(hex.slice(0, 2), 16);
+    const g = parseInt(hex.slice(2, 4), 16);
+    const b = parseInt(hex.slice(4, 6), 16);
+    return (r * 299 + g * 587 + b * 114) / 1000 > 128;
+  })();
+  const lightDefaults = { textPrimary: '#333333', textSecondary: '#555555', textMuted: '#777777', bgGlass: 'rgba(0,0,0,0.06)', borderLight: 'rgba(0,0,0,0.12)' };
   const textVars = ['--text-primary', '--text-secondary', '--text-muted', '--bg-glass', '--border-light'];
   const textKeys = ['textPrimary', 'textSecondary', 'textMuted', 'bgGlass', 'borderLight'];
   textKeys.forEach((key, i) => {
     if (theme[key]) root.style.setProperty(textVars[i], theme[key]);
+    else if (isLightBg) root.style.setProperty(textVars[i], lightDefaults[key]);
     else root.style.removeProperty(textVars[i]);
   });
 }
