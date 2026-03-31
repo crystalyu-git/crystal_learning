@@ -200,7 +200,7 @@ body {
   padding: 0.5rem 1rem;
   border: none;
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--text-primary);
   font-family: var(--font-sans);
   font-size: 0.875rem;
   font-weight: 500;
@@ -1343,6 +1343,11 @@ select.form-input {
 
 .search-input::placeholder {
   color: var(--text-muted);
+}
+
+.filter-select::placeholder {
+  color: var(--text-muted);
+  -webkit-text-fill-color: var(--text-muted);
 }
 
 .filter-select {
