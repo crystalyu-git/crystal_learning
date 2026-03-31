@@ -216,7 +216,7 @@ body {
 }
 
 .nav-btn.active {
-  background: rgba(99, 102, 241, 0.15);
+  background: color-mix(in srgb, var(--accent-primary) 15%, transparent);
   color: var(--accent-primary);
 }
 
@@ -1505,8 +1505,8 @@ select.form-input {
 .library-card-tag {
   display: inline-flex;
   padding: 0.2rem 0.6rem;
-  background: rgba(99, 102, 241, 0.1);
-  color: #818cf8;
+  background: color-mix(in srgb, var(--accent-primary) 10%, transparent);
+  color: var(--accent-primary);
   border-radius: 12px;
   font-size: 0.7rem;
   font-weight: 600;
@@ -1800,7 +1800,7 @@ select.form-input {
   background: var(--accent-primary);
   color: #fff;
   border-color: transparent;
-  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--accent-primary) 40%, transparent);
 }
 
 /* ── Audio Action Buttons ── */
