@@ -896,6 +896,7 @@ select.form-input {
   padding: 3.5rem 2rem 2rem;
   /* extra top padding for level badge */
   border-radius: var(--radius-xl);
+  overflow: hidden;
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
   box-sizing: border-box;

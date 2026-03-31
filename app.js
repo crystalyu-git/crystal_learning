@@ -1638,13 +1638,13 @@ function initSettings() {
   // Theme Presets
   $('#presetDeepPurple')?.addEventListener('click', () => {
     const preset = { bgPrimary: '#3A2C37', accentPrimary: '#5E5F87' };
-    applyTheme(preset);
+    applyTheme(preset); saveTheme(preset);
     showToast('已套用「深遂紫」配色');
   });
 
   $('#presetMidnightBlue')?.addEventListener('click', () => {
     const preset = { bgPrimary: '#14213d', accentPrimary: '#fca311' };
-    applyTheme(preset);
+    applyTheme(preset); saveTheme(preset);
     showToast('已套用「深夜藍」配色');
   });
 
@@ -1654,13 +1654,13 @@ function initSettings() {
       textPrimary: '#333333', textSecondary: '#555555', textMuted: '#777777',
       bgGlass: 'rgba(0,0,0,0.06)', borderLight: 'rgba(0,0,0,0.12)'
     };
-    applyTheme(preset);
+    applyTheme(preset); saveTheme(preset);
     showToast('已套用「活力黃」配色');
   });
 
   $('#presetGreenBrown')?.addEventListener('click', () => {
     const preset = { bgPrimary: '#3a3207', accentPrimary: '#babd8d' };
-    applyTheme(preset);
+    applyTheme(preset); saveTheme(preset);
     showToast('已套用「綠野棕」配色');
   });
 
