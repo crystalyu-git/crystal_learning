@@ -57,9 +57,9 @@
 
 /* ── 淺色主題覆蓋（由 HTML data-light 屬性觸發，不受 JS 快取影響）── */
 :root[data-light="1"] {
-  --text-primary: #333333;
-  --text-secondary: #555555;
-  --text-muted: #777777;
+  --text-primary: #555555;
+  --text-secondary: #777777;
+  --text-muted: #999999;
   --bg-glass: rgba(0, 0, 0, 0.06);
   --border-light: rgba(0, 0, 0, 0.12);
 }

@@ -11,7 +11,7 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;700&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=1.36">
+    <link rel="stylesheet" href="styles.css?v=1.37">
     <!-- 主題早期初始化：防止 Safari 快取舊 app.js 導致閃白 -->
     <script>
     (function() {
@@ -28,7 +28,7 @@
         }
         var keys=['textPrimary','textSecondary','textMuted','bgGlass','borderLight'];
         var vars=['--text-primary','--text-secondary','--text-muted','--bg-glass','--border-light'];
-        var defs=['#333333','#555555','#777777','rgba(0,0,0,0.06)','rgba(0,0,0,0.12)'];
+        var defs=['#555555','#777777','#999999','rgba(0,0,0,0.06)','rgba(0,0,0,0.12)'];
         keys.forEach(function(k,i){
           if(t[k]) root.style.setProperty(vars[i], t[k]);
           else if(isLight) root.style.setProperty(vars[i], defs[i]);
@@ -853,7 +853,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <script src="https://unpkg.com/wanakana@5.3.1/wanakana.min.js"></script>
-    <script src="app.js?v=1.33"></script>
+    <script src="app.js?v=1.37"></script>
 
     <!-- OCR Result Overlay -->
     <div id="ocrOverlay"
