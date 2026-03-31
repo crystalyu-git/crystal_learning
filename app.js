@@ -1676,8 +1676,12 @@ function initSettings() {
     const url = urlInput.value.trim();
     setNotionProxyUrl(url);
 
-    // Save Theme Configuration
+    // Save Theme Configuration（保留 preset 的文字色等額外屬性）
+    const existingSaved = (() => {
+      try { return JSON.parse(localStorage.getItem('crystal_learning_theme') || '{}'); } catch(e) { return {}; }
+    })();
     const currentTheme = {
+      ...existingSaved,
       bgPrimary: $('#colorBgPrimary').value !== '#0a0a1a' ? $('#colorBgPrimary').value : '',
       accentPrimary: $('#colorAccent').value !== '#6366f1' ? $('#colorAccent').value : '',
     };

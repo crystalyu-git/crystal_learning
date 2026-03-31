@@ -897,6 +897,7 @@ select.form-input {
   /* extra top padding for level badge */
   border-radius: var(--radius-xl);
   overflow: hidden;
+  -webkit-mask-image: -webkit-radial-gradient(white, black);
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
   box-sizing: border-box;
