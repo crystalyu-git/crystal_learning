@@ -1138,6 +1138,7 @@ function showCurrentCard() {
     $('#backSecondaryText').style.display = 'none'; // No pronunciation on back by default
     $('#backTertiaryText').textContent = card.example || '';
     $('#backTertiaryText').style.display = card.example ? 'block' : 'none';
+    $('#backTertiaryText').scrollTop = 0;
 
   } else {
     // Front shows Meaning (Quiz mode)
@@ -1154,6 +1155,7 @@ function showCurrentCard() {
 
     $('#backTertiaryText').textContent = card.example || '';
     $('#backTertiaryText').style.display = card.example ? 'block' : 'none';
+    $('#backTertiaryText').scrollTop = 0;
   }
 
   // Update schedule hints
@@ -1374,7 +1376,7 @@ function renderLibrary() {
           </div>
         </div>
         <div class="library-card-meaning">${escapeHtml(card.meaning)}</div>
-        ${card.example ? `<div class="library-card-example">${escapeHtml(card.example)}</div>` : ''}
+        ${card.example ? `<div class="library-card-example">${escapeHtml(card.example)}</div><button class="example-expand-btn" style="display:none" aria-expanded="false">展開 ▾</button>` : ''}
         <div class="library-card-footer">
           ${card.category ? `<span class="library-card-tag">${escapeHtml(card.category)}</span>` : '<span></span>'}
           <div style="display:flex; align-items:center; gap:0.75rem;">
@@ -1407,6 +1409,23 @@ function renderLibrary() {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       playOrSpeak({ audioUrl: btn.dataset.audioUrl }, btn.dataset.word, btn.dataset.lang, btn);
+    });
+  });
+
+  // 備註展開/收合
+  grid.querySelectorAll('.library-card-example').forEach(el => {
+    if (el.scrollHeight > el.clientHeight + 2) {
+      const btn = el.nextElementSibling;
+      if (btn?.classList.contains('example-expand-btn')) btn.style.display = 'inline-block';
+    }
+  });
+  grid.querySelectorAll('.example-expand-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const exEl = btn.previousElementSibling;
+      const expanded = exEl.classList.toggle('expanded');
+      btn.setAttribute('aria-expanded', expanded);
+      btn.textContent = expanded ? '收合 ▴' : '展開 ▾';
     });
   });
 }

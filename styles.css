@@ -1108,6 +1108,12 @@ select.form-input {
   font-style: italic;
   line-height: 1.5;
   max-width: 90%;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 7.5rem;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.15) transparent;
 }
 
 .card-hint {
@@ -1504,8 +1510,33 @@ select.form-input {
   font-size: 0.8rem;
   color: var(--text-muted);
   font-style: italic;
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.25rem;
   line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.library-card-example.expanded {
+  display: block;
+  overflow: visible;
+}
+
+.example-expand-btn {
+  display: inline-block;
+  font-size: 0.7rem;
+  color: var(--accent-primary);
+  background: none;
+  border: none;
+  padding: 0.2rem 0.4rem;
+  margin: -0.2rem -0.4rem 0.5rem;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  line-height: 1;
 }
 
 .library-card-footer {
