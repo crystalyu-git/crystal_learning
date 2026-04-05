@@ -3,6 +3,10 @@
    Application Logic
    ============================================= */
 
+// ── Auth ──
+const APP_PASSWORD = 'crystal168';
+const AUTH_KEY = 'crystal_auth';
+
 // ── Spaced Repetition Intervals (in days) ──
 const INTERVALS = [0, 1, 2, 4, 7, 15, 30]; // Level 0-6
 
@@ -34,11 +38,7 @@ const _OLD_NOTION_URL = 'https://script.google.com/macros/s/AKfycbwYDvfHI5XNMhwm
 })();
 
 function getNotionProxyUrl() {
-  return localStorage.getItem('crystal_learning_notion_url') || DEFAULT_NOTION_URL;
-}
-
-function setNotionProxyUrl(url) {
-  localStorage.setItem('crystal_learning_notion_url', url);
+  return DEFAULT_NOTION_URL;
 }
 
 function adjustHexToRgba(hex, percent, alpha) {
@@ -206,10 +206,44 @@ function extractYouTubeId(url) {
   return (match && match[2].length === 11) ? match[2] : null;
 }
 
+// ── Auth ──
+function isAuthenticated() {
+  return localStorage.getItem(AUTH_KEY) === '1';
+}
+
+function showLoginScreen() {
+  $('#navbar').style.display = 'none';
+  document.querySelector('.main-content').style.display = 'none';
+
+  const loginScreen = $('#loginScreen');
+  loginScreen.style.display = 'flex';
+
+  const input = $('#loginInput');
+  const btn = $('#loginBtn');
+  const error = $('#loginError');
+
+  const attempt = () => {
+    if (input.value === APP_PASSWORD) {
+      localStorage.setItem(AUTH_KEY, '1');
+      loginScreen.style.display = 'none';
+      $('#navbar').style.display = '';
+      document.querySelector('.main-content').style.display = '';
+      initApp();
+    } else {
+      error.style.display = 'block';
+      input.value = '';
+      input.focus();
+    }
+  };
+
+  btn.addEventListener('click', attempt);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') attempt(); });
+  input.focus();
+}
+
 // ── Initialize ──
-document.addEventListener('DOMContentLoaded', async () => {
+async function initApp() {
   loadYouTubeAPI();
-  loadTheme();
   loadCardsFromLocal();
   initParticles();
   initNavigation();
@@ -232,6 +266,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Try to connect to Notion Proxy
   if (getNotionProxyUrl()) {
     await syncFromNotion();
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadTheme();
+  if (!isAuthenticated()) {
+    showLoginScreen();
+  } else {
+    initApp();
   }
 });
 
@@ -725,8 +768,7 @@ function generateId() {
 // ── Date Helpers ──
 function getToday() {
   const now = new Date();
-  // ⚠️ Use UTC so all devices (regardless of timezone) compare against the same midnight
-  return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
 }
 
 function formatDate(timestamp) {
@@ -1624,14 +1666,12 @@ function initModal() {
 // ── Settings ──
 function initSettings() {
   const modal = $('#settingsModal');
-  const urlInput = $('#sheetUrlInput');
 
-  // Load saved URL
-  urlInput.value = getNotionProxyUrl();
+  // Show hardcoded URL (read-only)
+  $('#sheetUrlDisplay').textContent = DEFAULT_NOTION_URL;
 
   // Open settings
   $('#settingsBtn').addEventListener('click', () => {
-    urlInput.value = getNotionProxyUrl();
     // Refresh color pickers from saved theme
     const savedTheme = localStorage.getItem('crystal_learning_theme');
     try {
@@ -1702,9 +1742,6 @@ function initSettings() {
 
   // Save
   $('#saveSettings').addEventListener('click', () => {
-    const url = urlInput.value.trim();
-    setNotionProxyUrl(url);
-
     // Save Theme Configuration（保留 preset 的文字色等額外屬性）
     const existingSaved = (() => {
       try { return JSON.parse(localStorage.getItem('crystal_learning_theme') || '{}'); } catch(e) { return {}; }
@@ -1715,26 +1752,12 @@ function initSettings() {
       accentPrimary: $('#colorAccent').value !== '#6366f1' ? $('#colorAccent').value : '',
     };
     saveTheme(currentTheme);
-
     modal.classList.remove('active');
-
-    if (url) {
-      showToast('設定已儲存，正在連線...');
-      syncFromNotion();
-    } else {
-      updateSyncStatus('offline');
-      showToast('已清除資料庫連線');
-    }
+    showToast('設定已儲存');
   });
 
   // Sync now
   $('#syncNowBtn').addEventListener('click', async () => {
-    const url = urlInput.value.trim();
-    if (!url) {
-      showToast('⚠️ 未設定資料庫網址，無法上傳');
-      return;
-    }
-    setNotionProxyUrl(url);
     modal.classList.remove('active');
     showLoading('正在同步資料到 Database...');
 
@@ -1746,7 +1769,7 @@ function initSettings() {
     } catch (e) {
       console.error('Sync failed:', e);
       updateSyncStatus('error');
-      showToast('同步失敗，請檢查 URL 是否正確');
+      showToast('同步失敗，請檢查連線');
     } finally {
       hideLoading();
     }
@@ -1754,7 +1777,6 @@ function initSettings() {
 
   // Click sync status to open settings
   $('#syncStatusBtn').addEventListener('click', () => {
-    urlInput.value = getNotionProxyUrl();
     modal.classList.add('active');
   });
 

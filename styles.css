@@ -2099,6 +2099,58 @@ select.form-input {
   background: rgba(255, 255, 255, 0.2);
 }
 
+/* ── Login Screen ── */
+.login-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-primary);
+}
+
+.login-card {
+  width: min(360px, 90vw);
+  background: var(--bg-glass);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-xl);
+  padding: 2.5rem 2rem;
+  backdrop-filter: blur(20px);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 0.75rem;
+}
+
+.login-error {
+  font-size: 0.8rem;
+  color: #ef4444;
+  text-align: center;
+  display: none;
+  margin: 0;
+}
+
+/* ── Settings URL (read-only) ── */
+.settings-url-display {
+  opacity: 0.55;
+  cursor: default;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.78rem;
+  user-select: none;
+}
+
 /* ── Keyboard shortcut hint ── */
 .keyboard-hint {
   position: fixed;

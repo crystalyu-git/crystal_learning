@@ -44,6 +44,23 @@
     <!-- Animated background particles -->
     <div class="bg-particles" id="bgParticles"></div>
 
+    <!-- Login Screen -->
+    <div id="loginScreen" class="login-screen" style="display:none">
+        <div class="login-card">
+            <div class="login-brand">
+                <svg width="36" height="36" viewBox="0 0 28 28" fill="none">
+                    <path d="M14 2L2 8L14 14L26 8L14 2Z" stroke="var(--accent-primary)" stroke-width="2" fill="none"/>
+                    <path d="M2 20L14 26L26 20" stroke="var(--accent-primary)" stroke-width="2" fill="none"/>
+                    <path d="M2 14L14 20L26 14" stroke="var(--accent-primary)" stroke-width="2" fill="none"/>
+                </svg>
+                <span>Crystal Learning</span>
+            </div>
+            <input type="password" id="loginInput" class="form-input" placeholder="請輸入密碼" autocomplete="current-password">
+            <button id="loginBtn" class="btn btn-primary" style="width:100%;margin-top:0.75rem">進入</button>
+            <p id="loginError" class="login-error">密碼錯誤</p>
+        </div>
+    </div>
+
     <!-- Navigation -->
     <nav class="navbar" id="navbar">
         <div class="nav-brand">
@@ -636,9 +653,8 @@
                     </svg>
                     資料庫網址 (Apps Script)
                 </label>
-                <input type="url" id="sheetUrlInput" class="form-input" placeholder="貼上您的 Apps Script Web App URL"
-                    autocomplete="off">
-                <p class="settings-hint">用來與 Google Sheets 連線的網址，格式如：https://script.google.com/macros/s/xxx/exec</p>
+                <div class="form-input settings-url-display" id="sheetUrlDisplay" title="資料庫網址（固定）"></div>
+                <p class="settings-hint">目前使用固定資料庫連線，無法手動修改。</p>
             </div>
 
             <div class="settings-section">
