@@ -144,7 +144,7 @@ function applyTheme(theme) {
     const b = parseInt(hex.slice(4, 6), 16);
     return (r * 299 + g * 587 + b * 114) / 1000 > 128;
   })();
-  const lightDefaults = { textPrimary: '#555555', textSecondary: '#777777', textMuted: '#999999', bgGlass: 'rgba(0,0,0,0.06)', borderLight: 'rgba(0,0,0,0.12)' };
+  const lightDefaults = { textPrimary: '#555555', textSecondary: '#606060', textMuted: '#5a5a5a', bgGlass: 'rgba(0,0,0,0.06)', borderLight: 'rgba(0,0,0,0.12)' };
   const textVars = ['--text-primary', '--text-secondary', '--text-muted', '--bg-glass', '--border-light'];
   const textKeys = ['textPrimary', 'textSecondary', 'textMuted', 'bgGlass', 'borderLight'];
   textKeys.forEach((key, i) => {
@@ -1720,7 +1720,7 @@ function initSettings() {
   $('#presetVibrantYellow')?.addEventListener('click', () => {
     const preset = {
       bgPrimary: '#f5c400', accentPrimary: '#555555',
-      textPrimary: '#555555', textSecondary: '#777777', textMuted: '#999999',
+      textPrimary: '#555555', textSecondary: '#606060', textMuted: '#5a5a5a',
       bgGlass: 'rgba(0,0,0,0.06)', borderLight: 'rgba(0,0,0,0.12)'
     };
     applyTheme(preset); saveTheme(preset);

@@ -28,7 +28,7 @@
         }
         var keys=['textPrimary','textSecondary','textMuted','bgGlass','borderLight'];
         var vars=['--text-primary','--text-secondary','--text-muted','--bg-glass','--border-light'];
-        var defs=['#555555','#777777','#999999','rgba(0,0,0,0.06)','rgba(0,0,0,0.12)'];
+        var defs=['#555555','#606060','#5a5a5a','rgba(0,0,0,0.06)','rgba(0,0,0,0.12)'];
         keys.forEach(function(k,i){
           if(t[k]) root.style.setProperty(vars[i], t[k]);
           else if(isLight) root.style.setProperty(vars[i], defs[i]);
@@ -56,7 +56,7 @@
                 <span>Crystal Learning</span>
             </div>
             <input type="password" id="loginInput" class="form-input" placeholder="請輸入密碼" autocomplete="current-password">
-            <button id="loginBtn" class="btn btn-primary" style="width:100%;margin-top:0.75rem">進入</button>
+            <button id="loginBtn">進入</button>
             <p id="loginError" class="login-error">密碼錯誤</p>
         </div>
     </div>
