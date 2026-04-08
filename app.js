@@ -1733,6 +1733,12 @@ function initSettings() {
     showToast('已套用「綠野棕」配色');
   });
 
+  $('#presetIceCrystalBlue')?.addEventListener('click', () => {
+    const preset = { bgPrimary: '#001524', accentPrimary: '#9bf6ff' };
+    applyTheme(preset); saveTheme(preset);
+    showToast('已套用「冰晶藍」配色');
+  });
+
   // Theme Reset
   $('#resetThemeBtn').addEventListener('click', () => {
     localStorage.removeItem('crystal_learning_theme');
