@@ -124,8 +124,8 @@ function applyTheme(theme) {
   if (theme.bgPrimary) {
     root.style.setProperty('--bg-primary', theme.bgPrimary);
     root.style.setProperty('--bg-header', adjustHexToRgba(theme.bgPrimary, -25, 0.85));
-    root.style.setProperty('--bg-card', adjustHexToRgba(theme.bgPrimary, -15, 0.6));
-    root.style.setProperty('--bg-card-hover', adjustHexToRgba(theme.bgPrimary, -5, 0.7));
+    root.style.setProperty('--bg-card', theme.bgCard || adjustHexToRgba(theme.bgPrimary, -15, 0.6));
+    root.style.setProperty('--bg-card-hover', theme.bgCardHover || adjustHexToRgba(theme.bgPrimary, -5, 0.7));
     if ($('#colorBgPrimary')) $('#colorBgPrimary').value = theme.bgPrimary;
   } else {
     root.style.removeProperty('--bg-primary');
@@ -891,29 +891,10 @@ function updateDashboard() {
     $('#reviewCountLabel').textContent = '太棒了！沒有待複習的卡片';
   }
 
-  // Animate stat numbers
-  animateNumbers();
-
   // Schedule timeline
   renderSchedule(activeCards);
 }
 
-function animateNumbers() {
-  $$('.stat-number').forEach(el => {
-    const target = parseInt(el.textContent);
-    let current = 0;
-    const increment = Math.max(1, Math.ceil(target / 20));
-    const interval = setInterval(() => {
-      current += increment;
-      if (current >= target) {
-        el.textContent = target;
-        clearInterval(interval);
-      } else {
-        el.textContent = current;
-      }
-    }, 30);
-  });
-}
 
 function renderSchedule(filteredCards) {
   const timeline = $('#scheduleTimeline');
@@ -1754,6 +1735,34 @@ function initSettings() {
       bgGlass: 'rgba(0,0,0,0.06)', borderLight: 'rgba(0,0,0,0.12)' };
     applyTheme(preset); saveTheme(preset);
     showToast('已套用「黃昏橙」配色');
+  });
+
+  $('#presetCharcoalGray')?.addEventListener('click', () => {
+    const preset = { bgPrimary: '#45494C', accentPrimary: '#C59C5D' };
+    applyTheme(preset); saveTheme(preset);
+    showToast('已套用「質感灰」配色');
+  });
+
+  $('#presetEarthGreen')?.addEventListener('click', () => {
+    const preset = { bgPrimary: '#626A56', accentPrimary: '#D6A4A4',
+      textSecondary: '#cccccc', textMuted: '#bbbbbb' };
+    applyTheme(preset); saveTheme(preset);
+    showToast('已套用「質感綠」配色');
+  });
+
+  $('#presetSoftGreen')?.addEventListener('click', () => {
+    const preset = { bgPrimary: '#454542', accentPrimary: '#ACB8AA' };
+    applyTheme(preset); saveTheme(preset);
+    showToast('已套用「溫柔綠」配色');
+  });
+
+  $('#presetSoftPurple')?.addEventListener('click', () => {
+    const preset = { bgPrimary: '#8B72BE', accentPrimary: '#4B3621',
+      textPrimary: '#2a2a2a', textSecondary: '#444444', textMuted: '#555555',
+      bgGlass: 'rgba(255,255,255,0.18)', borderLight: 'rgba(255,255,255,0.30)',
+      bgCard: 'rgba(255,255,255,0.20)', bgCardHover: 'rgba(255,255,255,0.28)' };
+    applyTheme(preset); saveTheme(preset);
+    showToast('已套用「溫柔紫」配色');
   });
 
   // Theme Reset
