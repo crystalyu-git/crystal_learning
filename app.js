@@ -1739,6 +1739,12 @@ function initSettings() {
     showToast('已套用「冰晶藍」配色');
   });
 
+  $('#presetSoftPink')?.addEventListener('click', () => {
+    const preset = { bgPrimary: '#696969', accentPrimary: '#CC8899' };
+    applyTheme(preset); saveTheme(preset);
+    showToast('已套用「溫柔粉」配色');
+  });
+
   // Theme Reset
   $('#resetThemeBtn').addEventListener('click', () => {
     localStorage.removeItem('crystal_learning_theme');
