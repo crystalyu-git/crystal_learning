@@ -566,8 +566,10 @@ function updateViewTitles() {
   const langLabel = currentLangFilter === 'all' ? '所有語系' : getLangLabel(currentLangFilter);
   const dbTitle = $('#dashboardTitle');
   const rvTitle = $('#reviewTitle');
-  if (dbTitle) dbTitle.textContent = `歡迎回來 ✨ - ${langLabel}學習`;
-  if (rvTitle) rvTitle.textContent = `複習卡片 📖 - ${langLabel}`;
+  const sparkSvg = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" style="vertical-align:middle;position:relative;top:-2px;margin:0 2px"><path d="M12 2L13.5 9.5L21 12L13.5 14.5L12 22L10.5 14.5L3 12L10.5 9.5Z" stroke="var(--accent-primary)" stroke-width="1.8" fill="none" stroke-linejoin="round"/></svg>`;
+  const cardSvg = `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" style="vertical-align:middle;position:relative;top:-2px;margin:0 2px"><rect x="3" y="5" width="18" height="13" rx="2" stroke="var(--accent-primary)" stroke-width="1.8" fill="none"/><path d="M3 9h18" stroke="var(--accent-primary)" stroke-width="1.8"/></svg>`;
+  if (dbTitle) dbTitle.innerHTML = `歡迎回來 ${sparkSvg} - ${langLabel}學習`;
+  if (rvTitle) rvTitle.innerHTML = `複習卡片 ${cardSvg} - ${langLabel}`;
 }
 
 function renderLangFilterBars() {
@@ -1744,6 +1746,14 @@ function initSettings() {
       textSecondary: '#cccccc', textMuted: '#bbbbbb' };
     applyTheme(preset); saveTheme(preset);
     showToast('已套用「溫柔粉」配色');
+  });
+
+  $('#presetSunsetOrange')?.addEventListener('click', () => {
+    const preset = { bgPrimary: '#F8D7C4', accentPrimary: '#6C899D',
+      textPrimary: '#555555', textSecondary: '#606060', textMuted: '#5a5a5a',
+      bgGlass: 'rgba(0,0,0,0.06)', borderLight: 'rgba(0,0,0,0.12)' };
+    applyTheme(preset); saveTheme(preset);
+    showToast('已套用「黃昏橙」配色');
   });
 
   // Theme Reset
