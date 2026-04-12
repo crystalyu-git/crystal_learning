@@ -566,8 +566,8 @@ function updateViewTitles() {
   const langLabel = currentLangFilter === 'all' ? '所有語系' : getLangLabel(currentLangFilter);
   const dbTitle = $('#dashboardTitle');
   const rvTitle = $('#reviewTitle');
-  const sparkSvg = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" style="vertical-align:middle;position:relative;top:-2px;margin:0 2px"><path d="M12 2L13.5 9.5L21 12L13.5 14.5L12 22L10.5 14.5L3 12L10.5 9.5Z" stroke="var(--accent-primary)" stroke-width="1.8" fill="none" stroke-linejoin="round"/></svg>`;
-  const cardSvg = `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" style="vertical-align:middle;position:relative;top:-2px;margin:0 2px"><rect x="3" y="5" width="18" height="13" rx="2" stroke="var(--accent-primary)" stroke-width="1.8" fill="none"/><path d="M3 9h18" stroke="var(--accent-primary)" stroke-width="1.8"/></svg>`;
+  const sparkSvg = `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" style="vertical-align:middle;position:relative;top:-2px;margin:0 2px"><path d="M12 2L13.5 9.5L21 12L13.5 14.5L12 22L10.5 14.5L3 12L10.5 9.5Z" stroke="var(--accent-primary)" stroke-width="1.8" fill="none" stroke-linejoin="round"/></svg>`;
+  const cardSvg = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" style="vertical-align:middle;position:relative;top:-2px;margin:0 2px"><rect x="3" y="5" width="18" height="13" rx="2" stroke="var(--accent-primary)" stroke-width="1.8" fill="none"/><path d="M3 9h18" stroke="var(--accent-primary)" stroke-width="1.8"/></svg>`;
   if (dbTitle) dbTitle.innerHTML = `歡迎回來 ${sparkSvg} - ${langLabel}學習`;
   if (rvTitle) rvTitle.innerHTML = `複習卡片 ${cardSvg} - ${langLabel}`;
 }
