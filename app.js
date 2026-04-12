@@ -1740,7 +1740,8 @@ function initSettings() {
   });
 
   $('#presetSoftPink')?.addEventListener('click', () => {
-    const preset = { bgPrimary: '#696969', accentPrimary: '#CC8899' };
+    const preset = { bgPrimary: '#696969', accentPrimary: '#CC8899',
+      textSecondary: '#cccccc', textMuted: '#bbbbbb' };
     applyTheme(preset); saveTheme(preset);
     showToast('已套用「溫柔粉」配色');
   });
