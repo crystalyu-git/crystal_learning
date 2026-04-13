@@ -624,9 +624,12 @@
                     </svg>
                     <input type="text" id="searchInput" class="search-input" placeholder="搜尋字句...">
                 </div>
-                <input type="text" id="filterCategory" class="filter-select" list="filterCategoryList"
-                    placeholder="搜尋分類..." autocomplete="off">
-                <datalist id="filterCategoryList"></datalist>
+                <div class="filter-select-wrapper">
+                    <input type="text" id="filterCategory" class="filter-select" list="filterCategoryList"
+                        placeholder="搜尋分類..." autocomplete="off">
+                    <button id="clearFilterCategory" class="filter-clear-btn" aria-label="清除分類篩選" style="display:none">×</button>
+                    <datalist id="filterCategoryList"></datalist>
+                </div>
             </div>
             </div>
 

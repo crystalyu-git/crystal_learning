@@ -1327,7 +1327,22 @@ function finishReview() {
 // ── Library ──
 function initLibrary() {
   $('#searchInput').addEventListener('input', renderLibrary);
-  $('#filterCategory').addEventListener('input', renderLibrary);
+  const filterInput = $('#filterCategory');
+  const clearBtn = $('#clearFilterCategory');
+  const wrapper = filterInput.closest('.filter-select-wrapper');
+  filterInput.addEventListener('input', () => {
+    const hasValue = !!filterInput.value;
+    clearBtn.style.display = hasValue ? 'flex' : 'none';
+    wrapper.classList.toggle('has-value', hasValue);
+    renderLibrary();
+  });
+  clearBtn.addEventListener('click', () => {
+    filterInput.value = '';
+    clearBtn.style.display = 'none';
+    wrapper.classList.remove('has-value');
+    filterInput.focus();
+    renderLibrary();
+  });
 }
 
 function renderLibrary() {
@@ -1945,7 +1960,7 @@ function playOrSpeak(card, defaultText, lang, btnElement) {
         if (btnElement) btnElement.classList.remove('speaking');
         if (langCode) speakText(defaultText, langCode, btnElement);
       };
-      audio.play().catch(e => {
+      audio.play().catch(_e => {
         if (btnElement) btnElement.classList.remove('speaking');
         if (langCode) speakText(defaultText, langCode, btnElement);
       });
@@ -2197,7 +2212,7 @@ async function autoTranslate(word, fromLang, statusEl) {
   }
 }
 
-async function runOCR(imageFile, lang) {
+async function runOCR(imageFile, _lang) {
   const overlay = $('#ocrOverlay');
   const wordList = $('#ocrWordList');
   const fullText = $('#ocrFullText');
@@ -2492,8 +2507,7 @@ function initSmartInput() {
       const word = $('#editWord').value.trim();
       if (!word) { showToast('請先填寫生字'); return; }
       const lang = getLangValue('editLang') || getLangValue('inputLang');
-      const origFill = (text) => { $('#editMeaning').value = text; };
-      // 借用 autoTranslate，但 target 是 editMeaning
+      // 翻譯結果直接填入 editMeaning
       editTranslateStatus.style.display = 'block';
       editTranslateStatus.textContent = '⏳ 翻譯中...';
       editTranslateStatus.className = 'audio-status uploading';

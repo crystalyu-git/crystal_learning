@@ -1360,6 +1360,13 @@ select.form-input {
   color: var(--text-muted);
 }
 
+.filter-select::-webkit-calendar-picker-indicator {
+  opacity: 0;
+  pointer-events: none;
+  width: 0;
+  padding: 0;
+}
+
 .filter-select::placeholder {
   color: var(--text-muted);
   -webkit-text-fill-color: var(--text-muted);
@@ -1391,6 +1398,40 @@ select.form-input {
 
 .filter-select:focus {
   border-color: var(--accent-primary);
+}
+
+.filter-select-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.filter-select-wrapper .filter-select {
+  width: 100%;
+}
+
+.filter-select-wrapper.has-value .filter-select {
+  background-image: none;
+}
+
+.filter-clear-btn {
+  position: absolute;
+  right: 0.5rem;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+
+.filter-clear-btn:hover {
+  color: var(--text-primary);
 }
 
 .library-grid {
