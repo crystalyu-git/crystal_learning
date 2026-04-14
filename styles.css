@@ -1361,6 +1361,7 @@ select.form-input {
 }
 
 .filter-select::-webkit-calendar-picker-indicator {
+  display: none !important;
   opacity: 0;
   pointer-events: none;
   width: 0;
