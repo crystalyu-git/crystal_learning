@@ -261,6 +261,7 @@ async function initApp() {
   updateLanguageContextText();
   renderLangFilterBars();
   updateDashboard();
+  renderLibrary();
   updateCategoryDatalist();
 
   // Try to connect to Notion Proxy
