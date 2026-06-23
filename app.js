@@ -555,6 +555,7 @@ function getAvailableLangs() {
 function setLangFilter(lang) {
   currentLangFilter = lang;
   localStorage.setItem('crystal_lang_filter', lang);
+  libraryShowAll = false;
   renderLangFilterBars();
   updateViewTitles();
   // Refresh all active views
@@ -1326,8 +1327,12 @@ function finishReview() {
 }
 
 // ── Library ──
+// 知識庫預設只顯示最近新增的卡片數量；點「顯示全部」後解除限制
+const LIBRARY_DEFAULT_LIMIT = 20;
+let libraryShowAll = false;
+
 function initLibrary() {
-  $('#searchInput').addEventListener('input', renderLibrary);
+  $('#searchInput').addEventListener('input', () => { libraryShowAll = false; renderLibrary(); });
   const filterInput = $('#filterCategory');
   const clearBtn = $('#clearFilterCategory');
   const wrapper = filterInput.closest('.filter-select-wrapper');
@@ -1335,13 +1340,19 @@ function initLibrary() {
     const hasValue = !!filterInput.value;
     clearBtn.style.display = hasValue ? 'flex' : 'none';
     wrapper.classList.toggle('has-value', hasValue);
+    libraryShowAll = false;
     renderLibrary();
   });
   clearBtn.addEventListener('click', () => {
     filterInput.value = '';
     clearBtn.style.display = 'none';
     wrapper.classList.remove('has-value');
+    libraryShowAll = false;
     filterInput.focus();
+    renderLibrary();
+  });
+  $('#libraryShowAllBtn').addEventListener('click', () => {
+    libraryShowAll = true;
     renderLibrary();
   });
 }
@@ -1379,6 +1390,25 @@ function renderLibrary() {
 
   // Sort by creation date (newest first)
   filtered.sort((a, b) => b.createdAt - a.createdAt);
+
+  // 預設(無搜尋、無分類篩選且未展開)只顯示最近新增的 N 張
+  const isDefaultView = !searchTerm && !filterCat && !libraryShowAll;
+  const totalCount = filtered.length;
+  const truncated = isDefaultView && totalCount > LIBRARY_DEFAULT_LIMIT;
+  if (truncated) {
+    filtered = filtered.slice(0, LIBRARY_DEFAULT_LIMIT);
+  }
+
+  // 更新「顯示全部」提示列
+  const showAllBar = $('#libraryShowAllBar');
+  if (showAllBar) {
+    if (truncated) {
+      $('#libraryShowAllHint').textContent = `顯示最近 ${LIBRARY_DEFAULT_LIMIT} 張，共 ${totalCount} 張`;
+      showAllBar.style.display = 'flex';
+    } else {
+      showAllBar.style.display = 'none';
+    }
+  }
 
   if (filtered.length === 0) {
     grid.innerHTML = `

@@ -1441,6 +1441,36 @@ select.form-input {
   gap: 1rem;
 }
 
+.library-showall-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin-top: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.library-showall-bar #libraryShowAllHint {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+#libraryShowAllBtn {
+  padding: 0.5rem 1.25rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-accent);
+  background: color-mix(in srgb, var(--accent-primary) 8%, transparent);
+  color: var(--accent-primary);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+#libraryShowAllBtn:hover {
+  background: color-mix(in srgb, var(--accent-primary) 18%, transparent);
+}
+
 .library-card {
   position: relative;
   padding: 1.25rem;
