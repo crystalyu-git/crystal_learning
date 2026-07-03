@@ -832,6 +832,9 @@ function initNavigation() {
     });
   });
 
+  // 點擊左上角 logo/標題區塊回到預設首頁（知識庫）
+  $('.nav-brand').addEventListener('click', () => switchView('library'));
+
   // Quick actions
   $('#quickReview').addEventListener('click', () => switchView('review'));
   $('#quickAdd').addEventListener('click', () => switchView('add'));
@@ -1328,7 +1331,7 @@ function finishReview() {
 
 // ── Library ──
 // 知識庫預設只顯示最近新增的卡片數量；點「顯示全部」後解除限制
-const LIBRARY_DEFAULT_LIMIT = 20;
+const LIBRARY_DEFAULT_LIMIT = 21;
 let libraryShowAll = false;
 
 function initLibrary() {

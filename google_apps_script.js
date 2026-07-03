@@ -19,7 +19,7 @@
 // 7. 將 URL 貼到 Crystal Learning 的設定中
 // =============================================
 
-const SHEET_NAME = 'Sheet1'; // 你的工作表名稱，預設 Sheet1
+const SHEET_NAME = '字庫'; // 你的工作表名稱
 
 // 取得工作表
 function getSheet() {
@@ -59,30 +59,40 @@ function doGet(e) {
     }
 }
 
-// 處理 POST 請求 — 儲存、刪除、批次同步
+// 處理 POST 請求 — 儲存、刪除、批次同步、Telegram webhook
 function doPost(e) {
     try {
         const body = JSON.parse(e.postData.contents);
-        const action = body.action;
 
-        switch (action) {
-            case 'save':
-                return saveCard(body.card);
-            case 'delete':
-                return deleteCard(body.id);
-            case 'sync':
-                return syncAll(body.cards);
-            case 'uploadAudio':
-                return uploadAudio(body.base64Data, body.filename, body.mimeType, body.lang);
-            case 'deleteAudio':
-                return deleteAudio(body.fileId);
-            case 'ocrImage':
-                return performOCR(body.base64Data, body.mimeType);
-            case 'uploadImage':
-                return uploadImage(body.base64Data, body.filename, body.mimeType, body.lang);
-            default:
-                return jsonResponse({ success: false, error: 'Unknown action' });
+        if (body.action) {
+            switch (body.action) {
+                case 'save':
+                    return saveCard(body.card);
+                case 'delete':
+                    return deleteCard(body.id);
+                case 'sync':
+                    return syncAll(body.cards);
+                case 'uploadAudio':
+                    return uploadAudio(body.base64Data, body.filename, body.mimeType, body.lang);
+                case 'deleteAudio':
+                    return deleteAudio(body.fileId);
+                case 'ocrImage':
+                    return performOCR(body.base64Data, body.mimeType);
+                case 'uploadImage':
+                    return uploadImage(body.base64Data, body.filename, body.mimeType, body.lang);
+                default:
+                    return jsonResponse({ success: false, error: 'Unknown action' });
+            }
         }
+
+        // Telegram webhook 送來的 Update 物件沒有 action 欄位，但會有 message
+        if (body.message) {
+            return handleTelegramMessage(e, body.message);
+        }
+
+        // 其他 Telegram update 類型（edited_message、callback_query...）：忽略，但仍要用
+        // telegramResponse() 回應，避免 ContentService 的 302 轉址問題
+        return telegramResponse({ success: true, ignored: true });
     } catch (error) {
         return jsonResponse({ success: false, error: error.message });
     }
@@ -333,4 +343,124 @@ function performOCR(base64Data, mimeType) {
     } catch (error) {
         return jsonResponse({ success: false, error: 'OCR error: ' + error.toString() });
     }
+}
+
+// =============================================================
+// Telegram Webhook：轉發訊息自動寫入字庫
+// 設定步驟：
+// 1. Apps Script 編輯器 → 專案設定 → Script Properties 新增：
+//    TELEGRAM_BOT_TOKEN、TELEGRAM_WEBHOOK_SECRET（自訂密鑰）、
+//    WEB_APP_URL（目前部署的 Web App /exec 網址）
+// 2. 重新部署（Manage deployments → Edit → New version）
+// 3. 執行一次 setupTelegramWebhook() 註冊 webhook
+// =============================================================
+
+// 處理 Telegram 傳來的訊息，解析固定格式後寫入字庫
+function handleTelegramMessage(e, message) {
+    const props = PropertiesService.getScriptProperties();
+    const expectedSecret = props.getProperty('TELEGRAM_WEBHOOK_SECRET');
+    if (!expectedSecret || e.parameter.telegramSecret !== expectedSecret) {
+        return telegramResponse({ success: false, error: 'Unauthorized' });
+    }
+
+    const chatId = message.chat && message.chat.id;
+    // 語音/圖片等媒體訊息的文字放在 caption 欄位，純文字訊息才用 text
+    const rawText = message.text || message.caption || '';
+
+    // 完全沒有文字內容的訊息（純貼圖等）直接忽略，不回覆
+    if (!rawText) {
+        return telegramResponse({ success: true, skipped: true });
+    }
+
+    const parsed = parseDailySentence(rawText);
+
+    if (!parsed) {
+        telegramReply(chatId, '⚠️ 格式不符，未寫入字庫。');
+        return telegramResponse({ success: true, skipped: true });
+    }
+
+    const now = Date.now();
+    const today = new Date();
+    const card = {
+        id: now.toString(36) + Math.random().toString(36).substr(2, 9),
+        word: parsed.word,
+        pronunciation: parsed.pronunciation,
+        meaning: parsed.meaning,
+        example: parsed.example,
+        category: '每日一句',
+        audioUrl: '',
+        imageUrl: '',
+        lang: 'ja-JP',
+        level: 0,
+        nextReview: new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime(),
+        createdAt: now,
+        reviewCount: 0,
+    };
+
+    saveCard(card);
+    telegramReply(chatId, `✅ 已新增：${parsed.word}`);
+    return telegramResponse({ success: true });
+}
+
+// Telegram webhook 專用回應：ContentService.createTextOutput() 對 Telegram 而言會觸發
+// 302 轉址（"Wrong response from the webhook: 302 Moved Temporarily"），導致訊息一直重試。
+// 改用 HtmlService 可避免這個轉址問題。其他既有功能（save/delete/sync...）維持用 jsonResponse()。
+function telegramResponse(data) {
+    return HtmlService.createHtmlOutput(JSON.stringify(data));
+}
+
+// 解析固定格式：📖...每日一句：開頭 + 🙌...🙌 結尾
+function parseDailySentence(text) {
+    if (!text) return null;
+    const lines = text.split('\n').map(l => l.trim());
+
+    const headerIdx = lines.findIndex(l => l.indexOf('📖') === 0 && l.indexOf('每日一句') !== -1);
+    const footerIdx = lines.findIndex((l, i) =>
+        i > headerIdx && l.indexOf('🙌') === 0 && l.lastIndexOf('🙌') > 0
+    );
+    if (headerIdx === -1 || footerIdx === -1 || footerIdx <= headerIdx) return null;
+
+    // 依空行切成區塊：[0] = 中文/日文/假名/羅馬拼音，[1] = 文法筆記
+    const blocks = [];
+    let current = [];
+    lines.slice(headerIdx + 1, footerIdx).forEach(line => {
+        if (line === '') {
+            if (current.length) { blocks.push(current); current = []; }
+        } else {
+            current.push(line);
+        }
+    });
+    if (current.length) blocks.push(current);
+
+    const sentenceBlock = blocks[0] || [];
+    const meaning = sentenceBlock[0] || '';
+    const word = sentenceBlock[1] || '';
+    const pronunciation = sentenceBlock[2] || ''; // 假名讀音；羅馬拼音(index 3)捨棄不用
+    const example = (blocks[1] || []).join('\n');
+
+    if (!word || !meaning) return null;
+    return { meaning, word, pronunciation, example };
+}
+
+// 回覆訊息給 Telegram 使用者
+function telegramReply(chatId, text) {
+    const token = PropertiesService.getScriptProperties().getProperty('TELEGRAM_BOT_TOKEN');
+    if (!token || !chatId) return;
+    UrlFetchApp.fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: 'post',
+        contentType: 'application/json',
+        payload: JSON.stringify({ chat_id: chatId, text: text }),
+        muteHttpExceptions: true,
+    });
+}
+
+// 一次性執行：註冊 webhook（在 Apps Script 編輯器手動執行一次即可）
+function setupTelegramWebhook() {
+    const props = PropertiesService.getScriptProperties();
+    const token = props.getProperty('TELEGRAM_BOT_TOKEN');
+    const secret = props.getProperty('TELEGRAM_WEBHOOK_SECRET');
+    const webAppUrl = props.getProperty('WEB_APP_URL');
+    const hookUrl = `${webAppUrl}?telegramSecret=${encodeURIComponent(secret)}`;
+    const apiUrl = `https://api.telegram.org/bot${token}/setWebhook?url=${encodeURIComponent(hookUrl)}`;
+    Logger.log(UrlFetchApp.fetch(apiUrl).getContentText());
 }
