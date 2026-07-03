@@ -152,6 +152,22 @@ function applyTheme(theme) {
     else if (isLightBg) root.style.setProperty(textVars[i], lightDefaults[key]);
     else root.style.removeProperty(textVars[i]);
   });
+
+  updateFavicon();
+}
+
+// 依目前主題色（--accent-primary）重新產生 favicon
+function updateFavicon() {
+  const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent-primary').trim() || '#6366f1';
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 28'><path d='M14 2L2 8L14 14L26 8L14 2Z' stroke='${accent}' stroke-width='2' fill='none'/><path d='M2 20L14 26L26 20' stroke='${accent}' stroke-width='2' fill='none'/><path d='M2 14L14 20L26 14' stroke='${accent}' stroke-width='2' fill='none'/></svg>`;
+  let link = document.querySelector('link[rel="icon"]');
+  if (!link) {
+    link = document.createElement('link');
+    link.rel = 'icon';
+    link.type = 'image/svg+xml';
+    document.head.appendChild(link);
+  }
+  link.href = 'data:image/svg+xml,' + encodeURIComponent(svg);
 }
 
 function loadTheme() {
