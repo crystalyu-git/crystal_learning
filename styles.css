@@ -1527,6 +1527,16 @@ select.form-input {
   user-select: none;
 }
 
+.habit-name-col,
+.habit-streak-col {
+  transition: opacity 0.15s ease;
+}
+
+.habit-tracker-scroll.dragging .habit-name-col,
+.habit-tracker-scroll.dragging .habit-streak-col {
+  opacity: 0.85;
+}
+
 .habit-tracker-scroll::-webkit-scrollbar {
   height: 8px;
 }
@@ -1755,6 +1765,34 @@ tr:hover .habit-delete-btn {
 
 .habit-check-cell.checked .habit-check-dot::after {
   transform: translateY(-1px) rotate(45deg) scale(1);
+}
+
+/* 手機版：習慣名稱／最高連續欄改用內容自適應寬度，而非桌機固定寬度 */
+@media (max-width: 768px) {
+  .habit-tracker-table {
+    table-layout: auto;
+  }
+
+  .habit-name-col {
+    width: auto;
+    min-width: 56px;
+    max-width: 110px;
+    padding: 0.5rem 0.6rem !important;
+    font-size: 0.8rem;
+  }
+
+  .habit-streak-col {
+    width: auto;
+    min-width: 52px;
+    max-width: 90px;
+    padding: 0.4rem 0.4rem !important;
+    font-size: 0.7rem;
+  }
+
+  .habit-streak-badge {
+    padding: 0.2rem 0.45rem;
+    font-size: 0.7rem;
+  }
 }
 
 .library-card {
