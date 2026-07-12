@@ -13,7 +13,7 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;700&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=1.37">
+    <link rel="stylesheet" href="styles.css?v=1.38">
     <!-- 主題早期初始化：防止 Safari 快取舊 app.js 導致閃白 -->
     <script>
     (function() {
@@ -106,6 +106,14 @@
                     <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
                 </svg>
                 <span>知識庫</span>
+            </button>
+            <button class="nav-btn" data-view="habit" id="navHabit">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                    <line x1="3" y1="10" x2="21" y2="10" />
+                    <path d="M7 14l2 2 4-4" />
+                </svg>
+                <span>習慣追蹤</span>
             </button>
             <div class="nav-divider"></div>
 
@@ -648,6 +656,40 @@
             </div>
         </section>
 
+        <!-- ==================== HABIT TRACKER VIEW ==================== -->
+        <section class="view" id="habitView">
+            <div class="view-header">
+                <div>
+                    <h1 class="view-title">習慣追蹤 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--accent-primary)" stroke-width="2" style="vertical-align:middle;margin-left:2px;position:relative;top:-3px"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="3" y1="10" x2="21" y2="10" /><path d="M7 14l2 2 4-4" /></svg></h1>
+                    <p class="view-subtitle">每天打卡養成好習慣，往左拖拉查看過去紀錄</p>
+                </div>
+            </div>
+
+            <div class="habit-toolbar">
+                <input type="text" id="newHabitInput" class="form-input" placeholder="輸入新習慣名稱，例如：喝水、閱讀..." autocomplete="off">
+                <button type="button" id="addHabitBtn" class="habit-add-btn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="12" y1="5" x2="12" y2="19" />
+                        <line x1="5" y1="12" x2="19" y2="12" />
+                    </svg>
+                    新增習慣
+                </button>
+            </div>
+
+            <div class="habit-tracker-scroll" id="habitTrackerScroll">
+                <table class="habit-tracker-table" id="habitTrackerTable">
+                    <thead>
+                        <tr id="habitMonthRow"></tr>
+                        <tr id="habitDayRow"></tr>
+                    </thead>
+                    <tbody id="habitTrackerBody"></tbody>
+                </table>
+            </div>
+            <div class="empty-state small" id="emptyHabit" style="display:none">
+                <p>還沒有任何習慣，新增第一個開始打卡吧！</p>
+            </div>
+        </section>
+
     </main>
 
     <!-- Settings Modal -->
@@ -920,7 +962,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <script src="https://unpkg.com/wanakana@5.3.1/wanakana.min.js"></script>
-    <script src="app.js?v=1.37"></script>
+    <script src="app.js?v=1.38"></script>
 
     <!-- OCR Result Overlay -->
     <div id="ocrOverlay"

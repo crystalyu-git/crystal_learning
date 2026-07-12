@@ -4,7 +4,7 @@
    ============================================= */
 
 // ── Auth ──
-const APP_PASSWORD = 'crystal168';
+const APP_PASSWORD = 'crystalcrystal';
 const AUTH_KEY = 'crystal_auth';
 
 // ── Spaced Repetition Intervals (in days) ──
@@ -17,6 +17,12 @@ let currentReviewIndex = 0;
 let reviewStats = { total: 0, correct: 0, wrong: 0 };
 let deleteTargetId = null;
 let isOnline = false;
+
+// Habit Tracker
+let habits = []; // [{ id, name, createdAt }]
+let habitChecks = {}; // { [habitId]: { "YYYY-MM-DD": true } }
+let habitScrollInitialized = false;
+const HABIT_MAX_MONTHS_BACK = 11; // 打卡表最多回溯 11 個月，避免表格無限成長
 
 // Language Filter: persisted in localStorage
 let currentLangFilter = localStorage.getItem('crystal_lang_filter') || 'all';
@@ -261,12 +267,14 @@ function showLoginScreen() {
 async function initApp() {
   loadYouTubeAPI();
   loadCardsFromLocal();
+  loadHabitsFromLocal();
   initParticles();
   initNavigation();
   initLangToggle();
   initAddForm();
   initReview();
   initLibrary();
+  initHabitTracker();
   initModal();
   initSettings();
   initAudioActions();
@@ -309,6 +317,30 @@ function saveCardsToLocal() {
   localStorage.setItem('crystal_learning_cards', JSON.stringify(cards));
   updateCategoryDatalist();
   renderLangFilterBars();
+}
+
+// ── Habit Tracker: LocalStorage ──
+function loadHabitsFromLocal() {
+  try {
+    const data = localStorage.getItem('crystal_habit_list');
+    habits = data ? JSON.parse(data) : [];
+  } catch (e) {
+    habits = [];
+  }
+  try {
+    const data = localStorage.getItem('crystal_habit_checks');
+    habitChecks = data ? JSON.parse(data) : {};
+  } catch (e) {
+    habitChecks = {};
+  }
+}
+
+function saveHabitsToLocal() {
+  localStorage.setItem('crystal_habit_list', JSON.stringify(habits));
+}
+
+function saveHabitChecksToLocal() {
+  localStorage.setItem('crystal_habit_checks', JSON.stringify(habitChecks));
 }
 
 // ── Database Proxy API ──
@@ -405,16 +437,42 @@ async function syncFromNotion() {
         }
       }
 
+      // ── Extract hidden habit tracker card ──
+      const habitsCard = notionCards.find(c => c.id === HABITS_CARD_ID);
+      if (habitsCard) {
+        try {
+          const notionData = JSON.parse(habitsCard.meaning || '{}');
+          const notionUpdatedAt = Number(habitsCard.example) || 0;
+          const localUpdatedAt = Number(localStorage.getItem('crystal_habit_updated_at')) || 0;
+          // Keep whichever side was updated more recently
+          if (notionUpdatedAt > localUpdatedAt) {
+            habits = notionData.habits || [];
+            habitChecks = notionData.habitChecks || {};
+            saveHabitsToLocal();
+            saveHabitChecksToLocal();
+          } else if (localUpdatedAt > notionUpdatedAt) {
+            pushHabitsToNotion();
+          }
+        } catch (e) {
+          console.warn('Habit tracker data parse failed:', e);
+        }
+      } else if (habits.length > 0) {
+        // Cloud has no habit data yet — seed it from local
+        pushHabitsToNotion();
+      }
+
       // ── 以資料庫為主（Source of Truth）全數覆寫本地端 ──
-      const realNotionCards = notionCards.filter(c => c.id !== STREAK_CARD_ID);
+      const realNotionCards = notionCards.filter(c => c.id !== STREAK_CARD_ID && c.id !== HABITS_CARD_ID);
       cards = [...realNotionCards];
       saveCardsToLocal();
     } else if (cards.length > 0) {
       // Database is empty but local has data — push local to Database
       await NotionAPI.syncAll(cards);
+      if (habits.length > 0) pushHabitsToNotion();
     }
     updateSyncStatus('connected');
     updateDashboard();
+    renderHabitTracker();
   } catch (e) {
     console.warn('Database sync failed:', e);
     updateSyncStatus('error');
@@ -535,6 +593,31 @@ function saveStreak(streak, pushToNotion = true) {
   }
 }
 
+const HABITS_CARD_ID = '__crystal_habits__';
+let habitPushTimer = null;
+
+function markHabitsUpdated() {
+  localStorage.setItem('crystal_habit_updated_at', String(Date.now()));
+  pushHabitsToNotion();
+}
+
+function pushHabitsToNotion() {
+  if (!getNotionProxyUrl()) return;
+  clearTimeout(habitPushTimer);
+  habitPushTimer = setTimeout(() => {
+    // Store habit tracker data as a hidden Database card so it syncs across devices
+    const habitsCard = {
+      id: HABITS_CARD_ID,
+      word: '__habits__',
+      meaning: JSON.stringify({ habits, habitChecks }),
+      example: localStorage.getItem('crystal_habit_updated_at') || String(Date.now()),
+      pronunciation: '', category: '', audioUrl: '', lang: '',
+      level: 0, nextReview: 0, createdAt: Date.now(), reviewCount: 0,
+    };
+    saveCardToNotion(habitsCard); // fire-and-forget
+  }, 600);
+}
+
 // ── Language Filter System ──
 const LANG_LABELS = {
   'en-US': 'English (美式)', 'en-GB': 'English (英式)',
@@ -621,8 +704,8 @@ function renderLangFilterBars() {
 }
 
 function getCardsByLang() {
-  // Always exclude the hidden streak meta-card from display lists
-  const visible = cards.filter(c => c.id !== STREAK_CARD_ID);
+  // Always exclude hidden meta-cards (streak, habit tracker) from display lists
+  const visible = cards.filter(c => c.id !== STREAK_CARD_ID && c.id !== HABITS_CARD_ID);
   if (currentLangFilter === 'all') return visible;
   return visible.filter(c => getLangLabel(c.lang) === currentLangFilter);
 }
@@ -878,6 +961,7 @@ function switchView(viewName) {
   if (viewName === 'dashboard') updateDashboard();
   if (viewName === 'review') startReviewSession();
   if (viewName === 'library') renderLibrary();
+  if (viewName === 'habit') renderHabitTracker();
 }
 
 // ── Date Display ──
@@ -968,6 +1052,271 @@ function renderSchedule(filteredCards) {
         <span class="schedule-label">${dateStr} — ${words}${extra}</span>
       </div>`;
   }).join('');
+}
+
+// ── Habit Tracker ──
+function habitDateKey(timestamp) {
+  const d = new Date(timestamp);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+// 欄位範圍：從最早的習慣建立月份（最多回溯 HABIT_MAX_MONTHS_BACK 個月）到本月月底。
+// 每次渲染都以「今天」重新計算月底，因此每個月 1 日一到，新的一個月欄位就會自動出現，不需要額外排程。
+function getHabitDateColumns() {
+  const today = getToday();
+  const todayD = new Date(today);
+
+  let earliest = today;
+  habits.forEach(h => {
+    const c = new Date(h.createdAt);
+    const t = new Date(c.getFullYear(), c.getMonth(), c.getDate()).getTime();
+    if (t < earliest) earliest = t;
+  });
+  const earliestD = new Date(earliest);
+  const habitStartMonth = new Date(earliestD.getFullYear(), earliestD.getMonth(), 1).getTime();
+  const capStartMonth = new Date(todayD.getFullYear(), todayD.getMonth() - HABIT_MAX_MONTHS_BACK, 1).getTime();
+  const startMonth = Math.max(habitStartMonth, capStartMonth);
+  const endMonth = new Date(todayD.getFullYear(), todayD.getMonth() + 1, 0).getTime();
+
+  const cols = [];
+  let cur = startMonth;
+  while (cur <= endMonth) {
+    cols.push(cur);
+    cur = addDays(cur, 1);
+  }
+  return cols;
+}
+
+function isHabitChecked(habitId, dateKey) {
+  return !!(habitChecks[habitId] && habitChecks[habitId][dateKey]);
+}
+
+// 本月最高連續打卡天數：只看當月 1 日到月底，下個月重新計算會自動歸 0
+function getCurrentMonthMaxStreak(habitId) {
+  const today = new Date(getToday());
+  const y = today.getFullYear();
+  const m = today.getMonth();
+  const daysInMonth = new Date(y, m + 1, 0).getDate();
+  let maxStreak = 0;
+  let cur = 0;
+  for (let day = 1; day <= daysInMonth; day++) {
+    const key = habitDateKey(new Date(y, m, day).getTime());
+    if (isHabitChecked(habitId, key)) {
+      cur++;
+      if (cur > maxStreak) maxStreak = cur;
+    } else {
+      cur = 0;
+    }
+  }
+  return maxStreak;
+}
+
+function addHabit(name) {
+  name = (name || '').trim();
+  if (!name) return;
+  habits.push({
+    id: 'habit_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+    name,
+    createdAt: Date.now(),
+  });
+  saveHabitsToLocal();
+  markHabitsUpdated();
+  renderHabitTracker();
+}
+
+function deleteHabit(id) {
+  const h = habits.find(x => x.id === id);
+  if (!h) return;
+  if (!confirm(`確定要刪除習慣「${h.name}」嗎？此操作無法復原。`)) return;
+  habits = habits.filter(x => x.id !== id);
+  delete habitChecks[id];
+  saveHabitsToLocal();
+  saveHabitChecksToLocal();
+  markHabitsUpdated();
+  renderHabitTracker();
+}
+
+function toggleHabitCheck(habitId, dateKey) {
+  if (!habitChecks[habitId]) habitChecks[habitId] = {};
+  if (habitChecks[habitId][dateKey]) delete habitChecks[habitId][dateKey];
+  else habitChecks[habitId][dateKey] = true;
+  saveHabitChecksToLocal();
+  markHabitsUpdated();
+  renderHabitTracker();
+}
+
+function scrollHabitTrackerToToday() {
+  const container = $('#habitTrackerScroll');
+  const table = $('#habitTrackerTable');
+  if (!container || !table) return;
+  const todayCell = table.querySelector('.habit-day-col.is-today');
+  const nameCol = table.querySelector('.habit-name-col');
+  if (!todayCell) {
+    container.scrollLeft = container.scrollWidth;
+    return;
+  }
+  const nameWidth = nameCol ? nameCol.offsetWidth : 0;
+  container.scrollLeft = Math.max(0, todayCell.offsetLeft - nameWidth);
+}
+
+function renderHabitTracker() {
+  const monthRow = $('#habitMonthRow');
+  const dayRow = $('#habitDayRow');
+  const body = $('#habitTrackerBody');
+  const container = $('#habitTrackerScroll');
+  const emptyState = $('#emptyHabit');
+  if (!monthRow || !dayRow || !body) return;
+
+  emptyState.style.display = habits.length === 0 ? '' : 'none';
+  container.style.display = habits.length === 0 ? 'none' : '';
+  if (habits.length === 0) {
+    monthRow.innerHTML = '';
+    dayRow.innerHTML = '';
+    body.innerHTML = '';
+    return;
+  }
+
+  const prevScrollLeft = container.scrollLeft;
+  const cols = getHabitDateColumns();
+  const today = getToday();
+  const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
+
+  // Month header row (colspan per month group)
+  let monthHtml = '<th class="habit-name-col"></th>';
+  let i = 0;
+  while (i < cols.length) {
+    const d = new Date(cols[i]);
+    const y = d.getFullYear();
+    const m = d.getMonth();
+    let span = 0;
+    while (i + span < cols.length) {
+      const dd = new Date(cols[i + span]);
+      if (dd.getFullYear() !== y || dd.getMonth() !== m) break;
+      span++;
+    }
+    monthHtml += `<th class="habit-month-col" colspan="${span}">${y}年${m + 1}月</th>`;
+    i += span;
+  }
+  monthHtml += '<th class="habit-streak-col"></th>';
+  monthRow.innerHTML = monthHtml;
+
+  // Day number header row
+  let dayHtml = '<th class="habit-name-col">習慣</th>';
+  cols.forEach(ts => {
+    const d = new Date(ts);
+    const isToday = ts === today;
+    const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+    const cls = ['habit-day-col'];
+    if (isToday) cls.push('is-today');
+    if (isWeekend) cls.push('is-weekend');
+    dayHtml += `<th class="${cls.join(' ')}" title="${weekdays[d.getDay()]}">${d.getDate()}</th>`;
+  });
+  dayHtml += '<th class="habit-streak-col">最高連續</th>';
+  dayRow.innerHTML = dayHtml;
+
+  // Habit rows
+  body.innerHTML = habits.map(h => {
+    const cellsHtml = cols.map((ts, idx) => {
+      const key = habitDateKey(ts);
+      const checked = isHabitChecked(h.id, key);
+      const prevChecked = idx > 0 && isHabitChecked(h.id, habitDateKey(cols[idx - 1]));
+      const nextChecked = idx < cols.length - 1 && isHabitChecked(h.id, habitDateKey(cols[idx + 1]));
+      const cls = ['habit-check-cell'];
+      if (checked) cls.push('checked');
+      if (checked && prevChecked) cls.push('connect-prev');
+      if (checked && nextChecked) cls.push('connect-next');
+      return `<td><button type="button" class="${cls.join(' ')}" data-habit-id="${h.id}" data-date="${key}" aria-label="${h.name} ${key}"><span class="habit-check-dot"></span></button></td>`;
+    }).join('');
+    const maxStreak = getCurrentMonthMaxStreak(h.id);
+    return `<tr data-habit-id="${h.id}">
+      <td class="habit-name-col">
+        <div class="habit-name-cell">
+          <span class="habit-name-text">${escapeHtml(h.name)}</span>
+          <button type="button" class="habit-delete-btn" data-habit-id="${h.id}" title="刪除習慣">×</button>
+        </div>
+      </td>
+      ${cellsHtml}
+      <td class="habit-streak-col"><span class="habit-streak-badge">🔥 ${maxStreak}</span></td>
+    </tr>`;
+  }).join('');
+
+  if (!habitScrollInitialized) {
+    scrollHabitTrackerToToday();
+    habitScrollInitialized = true;
+  } else {
+    container.scrollLeft = prevScrollLeft;
+  }
+}
+
+function initHabitDragScroll(container) {
+  let isDown = false;
+  let startX = 0;
+  let scrollStart = 0;
+  let moved = false;
+
+  container.addEventListener('mousedown', (e) => {
+    isDown = true;
+    moved = false;
+    startX = e.pageX;
+    scrollStart = container.scrollLeft;
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!isDown) return;
+    const dx = e.pageX - startX;
+    if (Math.abs(dx) > 4) {
+      moved = true;
+      container.classList.add('dragging');
+    }
+    if (moved) container.scrollLeft = scrollStart - dx;
+  });
+
+  window.addEventListener('mouseup', () => {
+    isDown = false;
+    container.classList.remove('dragging');
+    setTimeout(() => { moved = false; }, 0);
+  });
+
+  container.addEventListener('click', (e) => {
+    if (moved) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+  }, true);
+}
+
+function initHabitTracker() {
+  const input = $('#newHabitInput');
+  $('#addHabitBtn').addEventListener('click', () => {
+    addHabit(input.value);
+    input.value = '';
+    input.focus();
+  });
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addHabit(input.value);
+      input.value = '';
+    }
+  });
+
+  const body = $('#habitTrackerBody');
+  body.addEventListener('click', (e) => {
+    const deleteBtn = e.target.closest('.habit-delete-btn');
+    if (deleteBtn) {
+      deleteHabit(deleteBtn.dataset.habitId);
+      return;
+    }
+    const checkCell = e.target.closest('.habit-check-cell');
+    if (checkCell) {
+      toggleHabitCheck(checkCell.dataset.habitId, checkCell.dataset.date);
+    }
+  });
+
+  initHabitDragScroll($('#habitTrackerScroll'));
 }
 
 // ── Add Form ──

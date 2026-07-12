@@ -85,12 +85,25 @@ function doPost(e) {
             }
         }
 
-        // Telegram webhook 送來的 Update 物件沒有 action 欄位，但會有 message
+        // Telegram webhook 送來的 Update 物件：用 update_id 防止 Telegram 重試造成重複處理
+        if (body.update_id !== undefined) {
+            const cache = CacheService.getScriptCache();
+            const updateKey = 'tg_update_' + body.update_id;
+            if (cache.get(updateKey)) {
+                return telegramResponse({ success: true, duplicate: true });
+            }
+            cache.put(updateKey, '1', 600); // 600 秒後自動過期
+        }
+
         if (body.message) {
             return handleTelegramMessage(e, body.message);
         }
 
-        // 其他 Telegram update 類型（edited_message、callback_query...）：忽略，但仍要用
+        if (body.callback_query) {
+            return handleCallbackQuery(e, body.callback_query);
+        }
+
+        // 其他 Telegram update 類型（edited_message...）：忽略，但仍要用
         // telegramResponse() 回應，避免 ContentService 的 302 轉址問題
         return telegramResponse({ success: true, ignored: true });
     } catch (error) {
@@ -397,9 +410,46 @@ function handleTelegramMessage(e, message) {
         reviewCount: 0,
     };
 
+    // 訊息若附帶語音/音檔（例如發音檔），下載後存到 Drive，填入 audioUrl
+    const audioUrl = saveTelegramAudioIfPresent(message, card.lang);
+    if (audioUrl) card.audioUrl = audioUrl;
+
     saveCard(card);
-    telegramReply(chatId, `✅ 已新增：${parsed.word}`);
+    telegramReply(chatId, `✅ 已新增：${parsed.word}${audioUrl ? '（含發音檔）' : ''}`);
     return telegramResponse({ success: true });
+}
+
+// 若 Telegram 訊息附帶語音（voice）或音檔（audio），下載後上傳到 Google Drive，
+// 回傳分享連結；沒有附帶或處理失敗則回傳 null（不影響卡片本身寫入）
+function saveTelegramAudioIfPresent(message, lang) {
+    const media = message.voice || message.audio;
+    if (!media || !media.file_id) return null;
+
+    try {
+        const token = PropertiesService.getScriptProperties().getProperty('TELEGRAM_BOT_TOKEN');
+        const blob = downloadTelegramFile(media.file_id, token);
+        const mimeType = media.mime_type || 'audio/ogg';
+        const filename = media.file_name || `telegram_${Date.now()}.${(mimeType.split('/')[1] || 'ogg')}`;
+        const base64Data = Utilities.base64Encode(blob.getBytes());
+
+        const result = JSON.parse(uploadAudio(base64Data, filename, mimeType, lang).getContent());
+        return result.success ? result.url : null;
+    } catch (err) {
+        return null;
+    }
+}
+
+// 透過 Telegram Bot API 的 getFile 取得檔案路徑，再下載實際檔案內容
+function downloadTelegramFile(fileId, token) {
+    const infoRes = UrlFetchApp.fetch(
+        `https://api.telegram.org/bot${token}/getFile?file_id=${encodeURIComponent(fileId)}`,
+        { muteHttpExceptions: true }
+    );
+    const info = JSON.parse(infoRes.getContentText());
+    if (!info.ok) throw new Error('getFile failed: ' + (info.description || ''));
+
+    const fileUrl = `https://api.telegram.org/file/bot${token}/${info.result.file_path}`;
+    return UrlFetchApp.fetch(fileUrl, { muteHttpExceptions: true }).getBlob();
 }
 
 // Telegram webhook 專用回應：ContentService.createTextOutput() 對 Telegram 而言會觸發
@@ -463,4 +513,110 @@ function setupTelegramWebhook() {
     const hookUrl = `${webAppUrl}?telegramSecret=${encodeURIComponent(secret)}`;
     const apiUrl = `https://api.telegram.org/bot${token}/setWebhook?url=${encodeURIComponent(hookUrl)}`;
     Logger.log(UrlFetchApp.fetch(apiUrl).getContentText());
+}
+
+// =============================================================
+// 澆水/動一動提醒：同一個 bot 的另一個功能（inline keyboard 按鈕）
+// 跟字庫轉發共用同一個 webhook，用 callback_query 分流過來
+// =============================================================
+
+const WATER_SHEET_ID = '1opxHnnqcMCtIaQAT4FUictX74pAb_QAQ-OpOssFIJZw';
+const WATER_SHEET_NAME = '每日DoWhat';
+
+// 處理「動動＋喝水」提醒訊息上的 Yes/No 按鈕
+function handleCallbackQuery(e, callbackQuery) {
+    const props = PropertiesService.getScriptProperties();
+    const expectedSecret = props.getProperty('TELEGRAM_WEBHOOK_SECRET');
+    if (!expectedSecret || e.parameter.telegramSecret !== expectedSecret) {
+        return telegramResponse({ success: false, error: 'Unauthorized' });
+    }
+
+    const token = props.getProperty('TELEGRAM_BOT_TOKEN');
+    const messageId = callbackQuery.message.message_id;
+    const chatId = callbackQuery.message.chat.id;
+    const data = callbackQuery.data;
+
+    // 1. 讓按鈕停止轉圈
+    UrlFetchApp.fetch(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
+        method: 'post',
+        contentType: 'application/json',
+        payload: JSON.stringify({ callback_query_id: callbackQuery.id }),
+        muteHttpExceptions: true,
+    });
+
+    // 2. 換掉訊息文字，按鈕消失
+    UrlFetchApp.fetch(`https://api.telegram.org/bot${token}/editMessageText`, {
+        method: 'post',
+        contentType: 'application/json',
+        payload: JSON.stringify({
+            chat_id: chatId,
+            message_id: messageId,
+            text: data === 'yes' ? '✅ 已記錄take a break！' : '❌ 記得休息！',
+        }),
+        muteHttpExceptions: true,
+    });
+
+    // 3. 寫 Sheet（最慢，放最後）
+    if (data === 'yes') {
+        try {
+            markWaterInSheet();
+        } catch (err) {
+            Logger.log('❌ sheet 寫入失敗: ' + err);
+        }
+    }
+
+    return telegramResponse({ success: true });
+}
+
+function markWaterInSheet() {
+    const ss = SpreadsheetApp.openById(WATER_SHEET_ID);
+    const sheet = ss.getSheetByName(WATER_SHEET_NAME);
+
+    const now = new Date();
+    const day = Number(Utilities.formatDate(now, 'Asia/Taipei', 'd'));
+    const timeStr = Utilities.formatDate(now, 'Asia/Taipei', 'HH:mm:ss');
+    const markText = '● 動動＋喝水 ' + timeStr;
+
+    const result = findDayCell(sheet, day);
+    if (!result) {
+        Logger.log('❌ 找不到今天的格子：' + day);
+        return;
+    }
+
+    const cell = sheet.getRange(result.row, result.col);
+    const existing = cell.getValue();
+    cell.setValue(existing === '' ? markText : existing + '\n' + markText);
+
+    Logger.log('✅ 寫入：' + cell.getValue());
+}
+
+function findDayCell(sheet, day) {
+    const data = sheet.getDataRange().getValues();
+    for (let r = 0; r < data.length; r++) {
+        for (let c = 0; c < data[r].length; c++) {
+            const cellValue = data[r][c];
+            // 儲存格若是日期格式會讀到 Date 物件，不是純數字，兩種都要能比對
+            const cellDay = cellValue instanceof Date ? cellValue.getDate() : Number(cellValue);
+            if (cellDay === day) {
+                return { row: r + 2, col: c + 1 };
+            }
+        }
+    }
+    return null;
+}
+
+// 除錯用：手動在 Apps Script 編輯器執行，把非空白儲存格的實際值和型別印出來
+// 確認完問題後可以刪掉這個函式
+function debugWaterSheet() {
+    const ss = SpreadsheetApp.openById(WATER_SHEET_ID);
+    const sheet = ss.getSheetByName(WATER_SHEET_NAME);
+    const data = sheet.getDataRange().getValues();
+    for (let r = 0; r < Math.min(10, data.length); r++) {
+        for (let c = 0; c < data[r].length; c++) {
+            const v = data[r][c];
+            if (v !== '') {
+                Logger.log(`[r=${r},c=${c}] value=${v} type=${typeof v} isDate=${v instanceof Date}`);
+            }
+        }
+    }
 }
