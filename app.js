@@ -740,11 +740,51 @@ function setLangValue(id, value) {
   sel.dispatchEvent(new Event('change'));
 }
 
+// 取得所有已使用過的自訂類別（卡片 lang 值中不屬於內建選項者）
+function getCustomCategories() {
+  const sel = $('#inputLang');
+  const builtin = new Set([...(sel?.options || [])].map(o => o.value));
+  const seen = new Set();
+  cards.forEach(c => {
+    if (c.id === STREAK_CARD_ID || c.id === HABITS_CARD_ID) return;
+    if (c.lang && !builtin.has(c.lang)) seen.add(c.lang);
+  });
+  return [...seen].sort();
+}
+
+// 為自訂類別輸入框加上模糊搜尋下拉建議
+function attachCategoryAutocomplete(input, box) {
+  if (!input || !box) return;
+  const render = () => {
+    const q = input.value.trim().toLowerCase();
+    const cats = getCustomCategories().filter(c =>
+      c.toLowerCase() !== q && (!q || c.toLowerCase().includes(q))
+    );
+    if (cats.length === 0) { box.style.display = 'none'; return; }
+    box.innerHTML = cats.map(c =>
+      `<div class="tag-suggestion-item" data-val="${escapeHtml(c)}">${escapeHtml(c)}</div>`
+    ).join('');
+    box.style.display = 'block';
+    box.querySelectorAll('.tag-suggestion-item').forEach(el => {
+      el.addEventListener('mousedown', (e) => {
+        e.preventDefault(); // 避免 input 的 blur 先觸發
+        input.value = el.dataset.val;
+        input.dispatchEvent(new Event('input'));
+        box.style.display = 'none';
+      });
+    });
+  };
+  input.addEventListener('focus', render);
+  input.addEventListener('input', render);
+  input.addEventListener('blur', () => setTimeout(() => { box.style.display = 'none'; }, 200));
+}
+
 // 初始化語言選單的自訂輸入切換邏輯
 function initLangSelectCustom(selectId) {
   const sel = $(`#${selectId}`);
   const custom = $(`#${selectId}Custom`);
   if (!sel || !custom) return;
+  attachCategoryAutocomplete(custom, $(`#${selectId}CustomSuggestions`));
   sel.addEventListener('change', () => {
     const isCustom = sel.value === '__custom__';
     custom.style.display = isCustom ? '' : 'none';

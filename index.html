@@ -299,6 +299,7 @@
                             <option value="__custom__">自訂類別...</option>
                         </select>
                         <input type="text" id="inputLangCustom" class="form-input" style="display:none; margin-top:0.5rem;" placeholder="輸入自訂類別（如：數學、程式語言）" autocomplete="off">
+                        <div id="inputLangCustomSuggestions" class="tag-suggestions" style="display:none;"></div>
                     </div>
 
                     <div class="form-group">
@@ -932,6 +933,7 @@
                         <option value="__custom__">自訂類別...</option>
                     </select>
                     <input type="text" id="editLangCustom" class="form-input" style="display:none; margin-top:0.5rem;" placeholder="輸入自訂類別（如：數學、程式語言）" autocomplete="off">
+                    <div id="editLangCustomSuggestions" class="tag-suggestions" style="display:none;"></div>
                 </div>
                 <div class="modal-actions">
                     <button type="button" class="modal-btn cancel" id="cancelEdit">取消</button>
@@ -962,7 +964,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <script src="https://unpkg.com/wanakana@5.3.1/wanakana.min.js"></script>
-    <script src="app.js?v=1.38"></script>
+    <script src="app.js?v=1.40"></script>
 
     <!-- OCR Result Overlay -->
     <div id="ocrOverlay"
