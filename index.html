@@ -13,7 +13,7 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;700&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=1.39">
+    <link rel="stylesheet" href="styles.css?v=1.41">
     <!-- 主題早期初始化：防止 Safari 快取舊 app.js 導致閃白 -->
     <script>
     (function() {
@@ -956,6 +956,26 @@
         </div>
     </div>
 
+    <!-- Card Check-in Record Modal -->
+    <div class="modal-overlay" id="cardRecordModal">
+        <div class="modal-content card-record-modal">
+            <div class="card-record-header">
+                <h3 id="cardRecordTitle">打卡紀錄</h3>
+                <button type="button" class="card-record-close" id="cardRecordClose" aria-label="關閉">×</button>
+            </div>
+            <p class="card-record-sub">往左拖拉查看過去紀錄。今日打卡請於知識庫卡片勾選。</p>
+            <div class="habit-tracker-scroll" id="cardRecordScroll">
+                <table class="habit-tracker-table" id="cardRecordTable">
+                    <thead>
+                        <tr id="cardRecordMonthRow"></tr>
+                        <tr id="cardRecordDayRow"></tr>
+                    </thead>
+                    <tbody id="cardRecordBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
     <!-- Loading Overlay -->
     <div class="loading-overlay" id="loadingOverlay">
         <div class="loading-spinner"></div>
@@ -964,7 +984,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <script src="https://unpkg.com/wanakana@5.3.1/wanakana.min.js"></script>
-    <script src="app.js?v=1.40"></script>
+    <script src="app.js?v=1.41"></script>
 
     <!-- OCR Result Overlay -->
     <div id="ocrOverlay"

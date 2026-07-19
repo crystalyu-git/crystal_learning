@@ -1668,9 +1668,57 @@ select.form-input {
 }
 
 .habit-name-text {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: text;
+}
+
+.habit-name-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  flex-shrink: 0;
+}
+
+.habit-name-edit-input {
+  width: 100%;
+  min-width: 60px;
+  padding: 0.15rem 0.35rem;
+  border: 1px solid var(--accent-primary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-glass);
+  color: var(--text-primary);
+  font-size: inherit;
+  font-family: inherit;
+  outline: none;
+}
+
+.habit-edit-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: all var(--transition-fast);
+}
+
+tr:hover .habit-edit-btn {
+  opacity: 1;
+}
+
+.habit-edit-btn:hover {
+  background: color-mix(in srgb, var(--accent-primary) 20%, transparent);
+  color: var(--accent-primary);
 }
 
 .habit-delete-btn {
@@ -2593,4 +2641,138 @@ tr:hover .habit-delete-btn {
   font-size: 0.65rem;
   color: var(--text-muted);
   font-family: var(--font-sans);
+}
+
+/* ── 知識庫卡片：今日打卡 ── */
+.library-card-checkin {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.checkin-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  cursor: pointer;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  user-select: none;
+}
+
+.card-checkin-box {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--border-light);
+  border-radius: 6px;
+  background: var(--bg-glass);
+  cursor: pointer;
+  position: relative;
+  flex-shrink: 0;
+  transition: all var(--transition-fast);
+}
+
+.card-checkin-box:hover {
+  border-color: var(--accent-primary);
+}
+
+.card-checkin-box:checked {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+}
+
+.card-checkin-box:checked::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 4px;
+  height: 8px;
+  border-right: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+  transform: translate(-50%, -60%) rotate(45deg);
+}
+
+.checkin-label:has(.card-checkin-box:checked) {
+  color: var(--accent-primary);
+}
+
+.card-record-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.6rem;
+  background: var(--bg-glass);
+  border: 1px solid var(--border-light);
+  border-radius: 20px;
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.card-record-btn:hover {
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+}
+
+/* ── 卡片打卡紀錄 Modal ── */
+.card-record-modal {
+  max-width: min(920px, 94vw);
+  width: auto;
+  text-align: left;
+  padding: 1.5rem;
+}
+
+.card-record-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.35rem;
+}
+
+.card-record-header h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  color: var(--text-primary);
+}
+
+.card-record-close {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.25rem;
+}
+
+.card-record-close:hover {
+  color: var(--text-primary);
+}
+
+.card-record-sub {
+  margin: 0 0 1rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+/* 唯讀打卡格：不可點、無 hover 效果 */
+.habit-check-cell.readonly {
+  cursor: default;
+}
+
+.habit-check-cell.readonly:hover .habit-check-dot {
+  border-color: var(--border-light);
+}
+
+.habit-check-cell.readonly.checked:hover .habit-check-dot {
+  border-color: var(--accent-primary);
 }

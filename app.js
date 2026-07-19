@@ -21,6 +21,7 @@ let isOnline = false;
 // Habit Tracker
 let habits = []; // [{ id, name, createdAt }]
 let habitChecks = {}; // { [habitId]: { "YYYY-MM-DD": true } }
+let cardChecks = {}; // { [cardId]: { "YYYY-MM-DD": true } } — 知識庫卡片每日打卡紀錄
 let habitScrollInitialized = false;
 const HABIT_MAX_MONTHS_BACK = 11; // 打卡表最多回溯 11 個月，避免表格無限成長
 
@@ -333,6 +334,12 @@ function loadHabitsFromLocal() {
   } catch (e) {
     habitChecks = {};
   }
+  try {
+    const data = localStorage.getItem('crystal_card_checks');
+    cardChecks = data ? JSON.parse(data) : {};
+  } catch (e) {
+    cardChecks = {};
+  }
 }
 
 function saveHabitsToLocal() {
@@ -341,6 +348,10 @@ function saveHabitsToLocal() {
 
 function saveHabitChecksToLocal() {
   localStorage.setItem('crystal_habit_checks', JSON.stringify(habitChecks));
+}
+
+function saveCardChecksToLocal() {
+  localStorage.setItem('crystal_card_checks', JSON.stringify(cardChecks));
 }
 
 // ── Database Proxy API ──
@@ -448,8 +459,10 @@ async function syncFromNotion() {
           if (notionUpdatedAt > localUpdatedAt) {
             habits = notionData.habits || [];
             habitChecks = notionData.habitChecks || {};
+            cardChecks = notionData.cardChecks || {};
             saveHabitsToLocal();
             saveHabitChecksToLocal();
+            saveCardChecksToLocal();
           } else if (localUpdatedAt > notionUpdatedAt) {
             pushHabitsToNotion();
           }
@@ -609,7 +622,7 @@ function pushHabitsToNotion() {
     const habitsCard = {
       id: HABITS_CARD_ID,
       word: '__habits__',
-      meaning: JSON.stringify({ habits, habitChecks }),
+      meaning: JSON.stringify({ habits, habitChecks, cardChecks }),
       example: localStorage.getItem('crystal_habit_updated_at') || String(Date.now()),
       pronunciation: '', category: '', audioUrl: '', lang: '',
       level: 0, nextReview: 0, createdAt: Date.now(), reviewCount: 0,
@@ -1103,22 +1116,15 @@ function habitDateKey(timestamp) {
   return `${y}-${m}-${day}`;
 }
 
-// 欄位範圍：從最早的習慣建立月份（最多回溯 HABIT_MAX_MONTHS_BACK 個月）到本月月底。
+// 欄位範圍：從最早紀錄月份（最多回溯 HABIT_MAX_MONTHS_BACK 個月）到本月月底。
 // 每次渲染都以「今天」重新計算月底，因此每個月 1 日一到，新的一個月欄位就會自動出現，不需要額外排程。
-function getHabitDateColumns() {
+function buildTrackerColumns(earliestTs) {
   const today = getToday();
   const todayD = new Date(today);
-
-  let earliest = today;
-  habits.forEach(h => {
-    const c = new Date(h.createdAt);
-    const t = new Date(c.getFullYear(), c.getMonth(), c.getDate()).getTime();
-    if (t < earliest) earliest = t;
-  });
-  const earliestD = new Date(earliest);
-  const habitStartMonth = new Date(earliestD.getFullYear(), earliestD.getMonth(), 1).getTime();
+  const earliestD = new Date(Math.min(earliestTs, today));
+  const startCandidate = new Date(earliestD.getFullYear(), earliestD.getMonth(), 1).getTime();
   const capStartMonth = new Date(todayD.getFullYear(), todayD.getMonth() - HABIT_MAX_MONTHS_BACK, 1).getTime();
-  const startMonth = Math.max(habitStartMonth, capStartMonth);
+  const startMonth = Math.max(startCandidate, capStartMonth);
   const endMonth = new Date(todayD.getFullYear(), todayD.getMonth() + 1, 0).getTime();
 
   const cols = [];
@@ -1130,12 +1136,27 @@ function getHabitDateColumns() {
   return cols;
 }
 
+function getHabitDateColumns() {
+  let earliest = getToday();
+  habits.forEach(h => {
+    const c = new Date(h.createdAt);
+    const t = new Date(c.getFullYear(), c.getMonth(), c.getDate()).getTime();
+    if (t < earliest) earliest = t;
+  });
+  return buildTrackerColumns(earliest);
+}
+
 function isHabitChecked(habitId, dateKey) {
   return !!(habitChecks[habitId] && habitChecks[habitId][dateKey]);
 }
 
-// 本月最高連續打卡天數：只看當月 1 日到月底，下個月重新計算會自動歸 0
-function getCurrentMonthMaxStreak(habitId) {
+function isCardChecked(cardId, dateKey) {
+  return !!(cardChecks[cardId] && cardChecks[cardId][dateKey]);
+}
+
+// 本月最高連續打卡天數：只看當月 1 日到月底，下個月重新計算會自動歸 0。
+// isCheckedFn(dateKey) 回傳該日是否打卡，供習慣與卡片共用。
+function currentMonthMaxStreak(isCheckedFn) {
   const today = new Date(getToday());
   const y = today.getFullYear();
   const m = today.getMonth();
@@ -1144,7 +1165,7 @@ function getCurrentMonthMaxStreak(habitId) {
   let cur = 0;
   for (let day = 1; day <= daysInMonth; day++) {
     const key = habitDateKey(new Date(y, m, day).getTime());
-    if (isHabitChecked(habitId, key)) {
+    if (isCheckedFn(key)) {
       cur++;
       if (cur > maxStreak) maxStreak = cur;
     } else {
@@ -1152,6 +1173,10 @@ function getCurrentMonthMaxStreak(habitId) {
     }
   }
   return maxStreak;
+}
+
+function getCurrentMonthMaxStreak(habitId) {
+  return currentMonthMaxStreak(key => isHabitChecked(habitId, key));
 }
 
 function addHabit(name) {
@@ -1179,6 +1204,42 @@ function deleteHabit(id) {
   renderHabitTracker();
 }
 
+function renameHabit(id, newName) {
+  const habit = habits.find(h => h.id === id);
+  if (!habit) return;
+  const name = (newName || '').trim();
+  if (!name || name === habit.name) { renderHabitTracker(); return; }
+  habit.name = name;
+  saveHabitsToLocal();
+  markHabitsUpdated();
+  renderHabitTracker();
+}
+
+// 就地編輯習慣名稱：將名稱文字換成輸入框，Enter/失焦儲存，Esc 取消
+function startHabitRename(id, spanEl) {
+  const habit = habits.find(h => h.id === id);
+  if (!habit || !spanEl) return;
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'habit-name-edit-input';
+  input.value = habit.name;
+  spanEl.replaceWith(input);
+  input.focus();
+  input.select();
+  let done = false;
+  const commit = (save) => {
+    if (done) return;
+    done = true;
+    if (save) renameHabit(id, input.value);
+    else renderHabitTracker();
+  };
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); commit(true); }
+    else if (e.key === 'Escape') { e.preventDefault(); commit(false); }
+  });
+  input.addEventListener('blur', () => commit(true));
+}
+
 function toggleHabitCheck(habitId, dateKey) {
   if (!habitChecks[habitId]) habitChecks[habitId] = {};
   if (habitChecks[habitId][dateKey]) delete habitChecks[habitId][dateKey];
@@ -1186,6 +1247,66 @@ function toggleHabitCheck(habitId, dateKey) {
   saveHabitChecksToLocal();
   markHabitsUpdated();
   renderHabitTracker();
+}
+
+// ── 知識庫卡片打卡 ──
+function todayKey() {
+  return habitDateKey(getToday());
+}
+
+// 該類別(lang 顯示名稱)今日是否還有其他卡片被打卡
+function isLangCheckedTodayByOther(langLabel, exceptCardId, key) {
+  return cards.some(c =>
+    c.id !== exceptCardId &&
+    c.id !== STREAK_CARD_ID && c.id !== HABITS_CARD_ID &&
+    getLangLabel(c.lang) === langLabel &&
+    isCardChecked(c.id, key)
+  );
+}
+
+// 依卡片 lang 連動習慣追蹤：打卡→建立/補打習慣今日；智慧取消→無其他同類別卡片時取消習慣今日
+function syncLangHabitFromCard(card, isNowChecked, key) {
+  const langLabel = getLangLabel(card.lang);
+  if (!langLabel) return;
+  let habit = habits.find(h => h.name === langLabel);
+
+  if (isNowChecked) {
+    if (!habit) {
+      habit = {
+        id: 'habit_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+        name: langLabel,
+        createdAt: Date.now(),
+      };
+      habits.push(habit);
+      saveHabitsToLocal();
+    }
+    if (!habitChecks[habit.id]) habitChecks[habit.id] = {};
+    habitChecks[habit.id][key] = true;
+    saveHabitChecksToLocal();
+  } else {
+    // 智慧取消：該類別今日已無任何其他卡片打卡才取消習慣今日打卡
+    if (habit && habitChecks[habit.id] && habitChecks[habit.id][key] &&
+        !isLangCheckedTodayByOther(langLabel, card.id, key)) {
+      delete habitChecks[habit.id][key];
+      saveHabitChecksToLocal();
+    }
+  }
+}
+
+function toggleCardCheck(cardId) {
+  const card = cards.find(c => c.id === cardId);
+  if (!card) return;
+  const key = todayKey();
+  if (!cardChecks[cardId]) cardChecks[cardId] = {};
+  const isNowChecked = !cardChecks[cardId][key];
+  if (isNowChecked) cardChecks[cardId][key] = true;
+  else delete cardChecks[cardId][key];
+  saveCardChecksToLocal();
+
+  syncLangHabitFromCard(card, isNowChecked, key);
+
+  markHabitsUpdated();
+  if ($('#habitView')?.classList.contains('active')) renderHabitTracker();
 }
 
 function scrollHabitTrackerToToday() {
@@ -1202,26 +1323,8 @@ function scrollHabitTrackerToToday() {
   container.scrollLeft = Math.max(0, todayCell.offsetLeft - nameWidth);
 }
 
-function renderHabitTracker() {
-  const monthRow = $('#habitMonthRow');
-  const dayRow = $('#habitDayRow');
-  const body = $('#habitTrackerBody');
-  const container = $('#habitTrackerScroll');
-  const emptyState = $('#emptyHabit');
-  if (!monthRow || !dayRow || !body) return;
-
-  emptyState.style.display = habits.length === 0 ? '' : 'none';
-  container.style.display = habits.length === 0 ? 'none' : '';
-  if (habits.length === 0) {
-    monthRow.innerHTML = '';
-    dayRow.innerHTML = '';
-    body.innerHTML = '';
-    return;
-  }
-
-  const prevScrollLeft = container.scrollLeft;
-  const cols = getHabitDateColumns();
-  const today = getToday();
+// 渲染打卡表的月份列與日期列（習慣追蹤與卡片打卡紀錄共用）
+function renderTrackerHead(monthRow, dayRow, cols, today, nameLabel) {
   const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
 
   // Month header row (colspan per month group)
@@ -1244,7 +1347,7 @@ function renderHabitTracker() {
   monthRow.innerHTML = monthHtml;
 
   // Day number header row
-  let dayHtml = '<th class="habit-name-col">習慣</th>';
+  let dayHtml = `<th class="habit-name-col">${escapeHtml(nameLabel)}</th>`;
   cols.forEach(ts => {
     const d = new Date(ts);
     const isToday = ts === today;
@@ -1256,6 +1359,97 @@ function renderHabitTracker() {
   });
   dayHtml += '<th class="habit-streak-col">最高連續</th>';
   dayRow.innerHTML = dayHtml;
+}
+
+// 卡片打卡紀錄 Modal（唯讀，格式同習慣追蹤）
+function openCardRecordModal(cardId) {
+  const card = cards.find(c => c.id === cardId);
+  if (!card) return;
+  const modal = $('#cardRecordModal');
+  const titleEl = $('#cardRecordTitle');
+  const monthRow = $('#cardRecordMonthRow');
+  const dayRow = $('#cardRecordDayRow');
+  const body = $('#cardRecordBody');
+  const scroll = $('#cardRecordScroll');
+  if (!modal || !monthRow || !dayRow || !body) return;
+
+  titleEl.textContent = `${card.word} · 打卡紀錄`;
+
+  const cardStart = new Date(card.createdAt);
+  const earliest = new Date(cardStart.getFullYear(), cardStart.getMonth(), cardStart.getDate()).getTime();
+  const cols = buildTrackerColumns(earliest);
+  const today = getToday();
+
+  renderTrackerHead(monthRow, dayRow, cols, today, '生字');
+
+  const cellsHtml = cols.map((ts, idx) => {
+    const key = habitDateKey(ts);
+    const checked = isCardChecked(cardId, key);
+    const prevChecked = idx > 0 && isCardChecked(cardId, habitDateKey(cols[idx - 1]));
+    const nextChecked = idx < cols.length - 1 && isCardChecked(cardId, habitDateKey(cols[idx + 1]));
+    const cls = ['habit-check-cell', 'readonly'];
+    if (checked) cls.push('checked');
+    if (checked && prevChecked) cls.push('connect-prev');
+    if (checked && nextChecked) cls.push('connect-next');
+    return `<td><span class="${cls.join(' ')}"><span class="habit-check-dot"></span></span></td>`;
+  }).join('');
+  const maxStreak = currentMonthMaxStreak(key => isCardChecked(cardId, key));
+  body.innerHTML = `<tr>
+    <td class="habit-name-col"><div class="habit-name-cell"><span class="habit-name-text" title="${escapeHtml(card.word)}">${escapeHtml(card.word)}</span></div></td>
+    ${cellsHtml}
+    <td class="habit-streak-col"><span class="habit-streak-badge">🔥 ${maxStreak}</span></td>
+  </tr>`;
+
+  modal.classList.add('active');
+  // 捲動到今天、為被截斷的名稱補上 tooltip（需在 Modal 顯示後量測）
+  requestAnimationFrame(() => {
+    const todayCell = $('#cardRecordTable')?.querySelector('.habit-day-col.is-today');
+    const nameCol = $('#cardRecordTable')?.querySelector('.habit-name-col');
+    if (scroll) {
+      if (todayCell) scroll.scrollLeft = Math.max(0, todayCell.offsetLeft - (nameCol ? nameCol.offsetWidth : 0));
+      else scroll.scrollLeft = scroll.scrollWidth;
+    }
+    applyEllipsisTitles(body);
+  });
+}
+
+// title 預設已在模板寫入（完整名稱），確保任何 render/隱藏狀態下截斷項目「一定」有 tooltip。
+// 這裡只在「可見且未截斷」時把多餘的 title 移除，讓短名稱不顯示 tooltip。
+// 隱藏（clientWidth 為 0）時完全不動，避免量測失準誤刪 title，造成 tooltip 閃一下就消失。
+function applyEllipsisTitles(scope) {
+  if (!scope) return;
+  scope.querySelectorAll('.habit-name-text').forEach(el => {
+    if (el.clientWidth === 0) return;                    // 隱藏，維持模板 title 不動
+    if (el.scrollWidth > el.clientWidth + 1) {
+      el.setAttribute('title', el.textContent);          // 截斷：確保 title 為完整內容
+    } else {
+      el.removeAttribute('title');                       // 未截斷：短名稱不需 tooltip
+    }
+  });
+}
+
+function renderHabitTracker() {
+  const monthRow = $('#habitMonthRow');
+  const dayRow = $('#habitDayRow');
+  const body = $('#habitTrackerBody');
+  const container = $('#habitTrackerScroll');
+  const emptyState = $('#emptyHabit');
+  if (!monthRow || !dayRow || !body) return;
+
+  emptyState.style.display = habits.length === 0 ? '' : 'none';
+  container.style.display = habits.length === 0 ? 'none' : '';
+  if (habits.length === 0) {
+    monthRow.innerHTML = '';
+    dayRow.innerHTML = '';
+    body.innerHTML = '';
+    return;
+  }
+
+  const prevScrollLeft = container.scrollLeft;
+  const cols = getHabitDateColumns();
+  const today = getToday();
+
+  renderTrackerHead(monthRow, dayRow, cols, today, '習慣');
 
   // Habit rows
   body.innerHTML = habits.map(h => {
@@ -1274,8 +1468,13 @@ function renderHabitTracker() {
     return `<tr data-habit-id="${h.id}">
       <td class="habit-name-col">
         <div class="habit-name-cell">
-          <span class="habit-name-text">${escapeHtml(h.name)}</span>
-          <button type="button" class="habit-delete-btn" data-habit-id="${h.id}" title="刪除習慣">×</button>
+          <span class="habit-name-text" data-habit-id="${h.id}" title="${escapeHtml(h.name)}">${escapeHtml(h.name)}</span>
+          <div class="habit-name-actions">
+            <button type="button" class="habit-edit-btn" data-habit-id="${h.id}" title="編輯名稱">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+            </button>
+            <button type="button" class="habit-delete-btn" data-habit-id="${h.id}" title="刪除習慣">×</button>
+          </div>
         </div>
       </td>
       ${cellsHtml}
@@ -1289,6 +1488,8 @@ function renderHabitTracker() {
   } else {
     container.scrollLeft = prevScrollLeft;
   }
+
+  applyEllipsisTitles(body);
 }
 
 function initHabitDragScroll(container) {
@@ -1345,6 +1546,12 @@ function initHabitTracker() {
 
   const body = $('#habitTrackerBody');
   body.addEventListener('click', (e) => {
+    const editBtn = e.target.closest('.habit-edit-btn');
+    if (editBtn) {
+      const nameEl = editBtn.closest('.habit-name-cell')?.querySelector('.habit-name-text');
+      startHabitRename(editBtn.dataset.habitId, nameEl);
+      return;
+    }
     const deleteBtn = e.target.closest('.habit-delete-btn');
     if (deleteBtn) {
       deleteHabit(deleteBtn.dataset.habitId);
@@ -1354,6 +1561,11 @@ function initHabitTracker() {
     if (checkCell) {
       toggleHabitCheck(checkCell.dataset.habitId, checkCell.dataset.date);
     }
+  });
+  // 雙擊名稱也可編輯
+  body.addEventListener('dblclick', (e) => {
+    const nameEl = e.target.closest('.habit-name-text');
+    if (nameEl) startHabitRename(nameEl.dataset.habitId, nameEl);
   });
 
   initHabitDragScroll($('#habitTrackerScroll'));
@@ -1829,6 +2041,7 @@ function renderLibrary() {
   }
 
   const levelNames = ['新學', '初學', '學習中', '熟悉中', '進階', '精通', '大師'];
+  const checkinTodayKey = todayKey();
 
   grid.innerHTML = filtered.map(card => {
     const levelClass = `level-${Math.min(card.level, 6)}`;
@@ -1863,6 +2076,16 @@ function renderLibrary() {
             <span class="library-card-next">📅 ${nextReview}</span>
           </div>
         </div>
+        <div class="library-card-checkin">
+          <label class="checkin-label" title="打勾即完成今日打卡，每日 00:00 (+8) 更新">
+            <input type="checkbox" class="card-checkin-box" data-id="${card.id}" ${isCardChecked(card.id, checkinTodayKey) ? 'checked' : ''}>
+            <span>今日打卡</span>
+          </label>
+          <button type="button" class="card-record-btn" data-id="${card.id}" title="查看打卡紀錄">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="10" x2="21" y2="10"/><path d="M8 2v4M16 2v4"/></svg>
+            打卡紀錄
+          </button>
+        </div>
       </div>`;
   }).join('');
 
@@ -1888,6 +2111,22 @@ function renderLibrary() {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       playOrSpeak({ audioUrl: btn.dataset.audioUrl }, btn.dataset.word, btn.dataset.lang, btn);
+    });
+  });
+
+  // Attach 今日打卡 checkbox listeners
+  grid.querySelectorAll('.card-checkin-box').forEach(box => {
+    box.addEventListener('click', (e) => e.stopPropagation());
+    box.addEventListener('change', () => {
+      toggleCardCheck(box.dataset.id);
+    });
+  });
+
+  // Attach 打卡紀錄 button listeners
+  grid.querySelectorAll('.card-record-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openCardRecordModal(btn.dataset.id);
     });
   });
 
@@ -2025,6 +2264,16 @@ function initModal() {
       deleteTargetId = null;
     }
   });
+
+  // Card Check-in Record Modal
+  const cardRecordModal = $('#cardRecordModal');
+  if (cardRecordModal) {
+    $('#cardRecordClose').addEventListener('click', () => cardRecordModal.classList.remove('active'));
+    cardRecordModal.addEventListener('click', (e) => {
+      if (e.target === cardRecordModal) cardRecordModal.classList.remove('active');
+    });
+    initHabitDragScroll($('#cardRecordScroll'));
+  }
 
   // Edit Modal Event Listeners
   $('#cancelEdit').addEventListener('click', () => {
