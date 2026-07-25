@@ -13,7 +13,7 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;700&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=1.50">
+    <link rel="stylesheet" href="styles.css?v=1.51">
     <!-- 主題早期初始化：防止 Safari 快取舊 app.js 導致閃白 -->
     <script>
     (function() {
@@ -758,7 +758,7 @@
                     資料庫網址 (Apps Script)
                 </label>
                 <div class="form-input settings-url-display" id="sheetUrlDisplay" title="資料庫網址（固定）"></div>
-                <p class="settings-hint">目前使用固定資料庫連線，無法手動修改。</p>
+                <p class="settings-hint">固定連線，無法手動修改</p>
             </div>
 
             <div class="settings-section">
@@ -845,19 +845,21 @@
                     style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem;">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <span style="font-size: 0.9rem; color: var(--text-secondary);">版面主要背景色</span>
-                        <input type="color" id="colorBgPrimary" value="#0a0a1a"
-                            style="background: transparent; border: none; width: 40px; height: 30px; cursor: pointer;">
+                        <span class="color-swatch-wrap">
+                            <input type="color" id="colorBgPrimary" value="#0a0a1a" class="color-swatch">
+                        </span>
                     </div>
 
                     <div
                         style="display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border-light);">
                         <span style="font-size: 0.9rem; color: var(--text-secondary);">主題強調色 (Accent)</span>
-                        <input type="color" id="colorAccent" value="#6366f1"
-                            style="background: transparent; border: none; width: 40px; height: 30px; cursor: pointer;">
+                        <span class="color-swatch-wrap">
+                            <input type="color" id="colorAccent" value="#6366f1" class="color-swatch">
+                        </span>
                     </div>
                 </div>
                 <button class="modal-btn secondary" id="resetThemeBtn"
-                    style="margin-top: 1rem; width: 100%; border: 1px solid var(--border-light); background: var(--bg-glass);">還原預設配色</button>
+                    style="margin-top: 1rem; width: 100%; border: 1px solid var(--border-light); background: var(--bg-glass); color: var(--text-accent);">還原預設配色</button>
             </div>
             <div class="settings-actions">
                 <button class="modal-btn cancel" id="cancelSettings">取消</button>
@@ -1048,7 +1050,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <script src="https://unpkg.com/wanakana@5.3.1/wanakana.min.js"></script>
-    <script src="app.js?v=1.50"></script>
+    <script src="app.js?v=1.51"></script>
 
     <!-- OCR Result Overlay -->
     <div id="ocrOverlay"

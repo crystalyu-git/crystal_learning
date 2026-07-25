@@ -2310,14 +2310,14 @@ tr:hover .habit-delete-btn {
 }
 
 .settings-section {
-  margin-bottom: 1.25rem;
+  margin-bottom: 1rem;
 }
 
 .settings-hint {
-  font-size: 0.75rem;
+  font-size: 0.65rem;
   color: var(--text-muted);
-  margin-top: 0.5rem;
-  line-height: 1.4;
+  margin-top: 0.25rem;
+  line-height: 1.3;
 }
 
 /* ── Language Filter Bar ── */
@@ -2723,14 +2723,57 @@ tr:hover .habit-delete-btn {
 }
 
 /* ── Settings URL (read-only) ── */
+/* 取色器：色塊本身選到深色時會跟深色底融在一起，靠外層 wrapper 保證永遠看得到邊界。
+   邊框畫在 wrapper 上而不是 input 上，因為 iOS Safari 對 input[type=color] 的邊框支援不一致 */
+.color-swatch-wrap {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-glass);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.3);
+  flex-shrink: 0;
+}
+
+.color-swatch {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 44px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.color-swatch::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.color-swatch::-webkit-color-swatch {
+  border: none;
+  border-radius: 5px;
+}
+
+.color-swatch::-moz-color-swatch {
+  border: none;
+  border-radius: 5px;
+}
+
+/* 唯讀顯示用，不需要 .form-input 那種可輸入欄位的高度與內距 */
 .settings-url-display {
   opacity: 0.55;
   cursor: default;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   user-select: none;
+  min-height: 0;
+  padding: 0.4rem 0.65rem;
+  margin-top: 0.4rem;
+  border-radius: var(--radius-sm);
 }
 
 /* ── Keyboard shortcut hint ── */
