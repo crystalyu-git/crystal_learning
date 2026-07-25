@@ -32,6 +32,12 @@ let currentLangFilter = localStorage.getItem('crystal_lang_filter') || 'all';
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
+// ── Inline Icons ──
+// 動態產生的 icon，樣式跟 index.html 裡的線條 icon 一致（Feather 風格）
+const svgIcon = (paths) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
+const ICON_INBOX = svgIcon('<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>');
+const ICON_SEARCH = svgIcon('<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>');
+
 // ── Database Proxy API URL ──
 // 含 getAudio 端點的部署（iOS 播 Drive 音檔要靠它）
 const DEFAULT_NOTION_URL = 'https://script.google.com/macros/s/AKfycbwTp_1PYsL9eAoAtL8AzTCT_EPssN3_KsOXKhPQrQ9F6Bw2LWMNYFU-F8Nk8-ruRkIrZw/exec';
@@ -542,6 +548,11 @@ async function syncFromNotion() {
     updateSyncStatus('connected');
     updateDashboard();
     renderHabitTracker();
+    // 知識庫只在切頁時重繪，同步完成時若正停在這頁不補繪，
+    // 會一直顯示同步前的「知識庫是空的」，要切走再切回來才看得到資料
+    if ($('#libraryView') && $('#libraryView').classList.contains('active')) {
+      renderLibrary();
+    }
   } catch (e) {
     console.warn('Database sync failed:', e);
     updateSyncStatus('error');
@@ -2107,7 +2118,7 @@ function renderLibrary() {
   if (filtered.length === 0) {
     grid.innerHTML = `
       <div class="empty-state" id="emptyLibrary" style="grid-column: 1 / -1;">
-        <div class="empty-icon">${activeCards.length === 0 ? '📭' : '🔍'}</div>
+        <div class="empty-icon">${activeCards.length === 0 ? ICON_INBOX : ICON_SEARCH}</div>
         <h3>${activeCards.length === 0 ? '此語言的知識庫是空的' : '找不到結果'}</h3>
         <p>${activeCards.length === 0 ? '開始新增字句來建立你的學習庫吧！' : '試試其他搜尋關鍵字'}</p>
       </div>`;
