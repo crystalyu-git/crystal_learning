@@ -390,9 +390,11 @@ function performOCR(base64Data, mimeType) {
 // 設定步驟：
 // 1. Apps Script 編輯器 → 專案設定 → Script Properties 新增：
 //    TELEGRAM_BOT_TOKEN、TELEGRAM_WEBHOOK_SECRET（自訂密鑰）、
-//    WEB_APP_URL（目前部署的 Web App /exec 網址）
+//    WEB_APP_URL（目前部署的 Web App /exec 網址，留空則自動取用目前部署）
 // 2. 重新部署（Manage deployments → Edit → New version）
 // 3. 執行一次 setupTelegramWebhook() 註冊 webhook
+// 4. 執行 checkTelegramWebhook() 確認註冊到的網址正確
+// ※ 換成另一個部署（不同 /exec 網址）時，要更新 WEB_APP_URL 並重跑第 3、4 步
 // =============================================================
 
 // 處理 Telegram 傳來的訊息，解析固定格式後寫入字庫
@@ -536,10 +538,29 @@ function setupTelegramWebhook() {
     const props = PropertiesService.getScriptProperties();
     const token = props.getProperty('TELEGRAM_BOT_TOKEN');
     const secret = props.getProperty('TELEGRAM_WEBHOOK_SECRET');
-    const webAppUrl = props.getProperty('WEB_APP_URL');
+
+    // 沒設 WEB_APP_URL 就用目前部署的網址，換部署後就不會忘了改屬性
+    const webAppUrl = props.getProperty('WEB_APP_URL') || ScriptApp.getService().getUrl();
+    if (!webAppUrl) throw new Error('找不到 Web App 網址：請設定 WEB_APP_URL 或先部署為 Web App');
+    Logger.log('註冊到：' + webAppUrl);
+
     const hookUrl = `${webAppUrl}?telegramSecret=${encodeURIComponent(secret)}`;
     const apiUrl = `https://api.telegram.org/bot${token}/setWebhook?url=${encodeURIComponent(hookUrl)}`;
     Logger.log(UrlFetchApp.fetch(apiUrl).getContentText());
+}
+
+// 確認 Telegram 目前實際打到哪個部署（換部署後用這個驗證有沒有搬成功）
+function checkTelegramWebhook() {
+    const token = PropertiesService.getScriptProperties().getProperty('TELEGRAM_BOT_TOKEN');
+    const res = UrlFetchApp.fetch(`https://api.telegram.org/bot${token}/getWebhookInfo`);
+    const info = JSON.parse(res.getContentText()).result || {};
+    // 網址帶著密鑰，log 時遮掉
+    Logger.log('目前 webhook：' + String(info.url || '(未設定)').replace(/telegramSecret=[^&]*/, 'telegramSecret=***'));
+    Logger.log('待處理訊息數：' + info.pending_update_count);
+    if (info.last_error_message) {
+        Logger.log('最後一次錯誤：' + info.last_error_date + ' — ' + info.last_error_message);
+    }
+    return info;
 }
 
 // =============================================================

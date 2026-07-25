@@ -33,13 +33,17 @@ const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
 // ── Database Proxy API URL ──
-const DEFAULT_NOTION_URL = 'https://script.google.com/macros/s/AKfycbyi3PtLL5wwEdx2feSYHiaRC0FrF-9YXI3P-WXdfVVg0Bmz3ClOs5JKurwkaz69Fw9POA/exec';
-// Old deprecated URL — auto-migrate if still stored on this device
-const _OLD_NOTION_URL = 'https://script.google.com/macros/s/AKfycbwYDvfHI5XNMhwmF8v4KC7hCOs_xHQXNjelVriO5cpWOu0lxduFcBa40Ex6-CPwWF2q/exec';
+// 含 getAudio 端點的部署（iOS 播 Drive 音檔要靠它）
+const DEFAULT_NOTION_URL = 'https://script.google.com/macros/s/AKfycbwTp_1PYsL9eAoAtL8AzTCT_EPssN3_KsOXKhPQrQ9F6Bw2LWMNYFU-F8Nk8-ruRkIrZw/exec';
+// Old deprecated URLs — auto-migrate if still stored on this device
+const _OLD_NOTION_URLS = [
+  'https://script.google.com/macros/s/AKfycbwYDvfHI5XNMhwmF8v4KC7hCOs_xHQXNjelVriO5cpWOu0lxduFcBa40Ex6-CPwWF2q/exec',
+  'https://script.google.com/macros/s/AKfycbyi3PtLL5wwEdx2feSYHiaRC0FrF-9YXI3P-WXdfVVg0Bmz3ClOs5JKurwkaz69Fw9POA/exec',
+];
 (function migrateNotionUrl() {
   const stored = localStorage.getItem('crystal_learning_notion_url');
-  // If stored value is the old URL or empty string, clear it so DEFAULT_NOTION_URL takes effect
-  if (stored === _OLD_NOTION_URL || stored === '') {
+  // If stored value is an old URL or empty string, clear it so DEFAULT_NOTION_URL takes effect
+  if (_OLD_NOTION_URLS.includes(stored) || stored === '') {
     localStorage.removeItem('crystal_learning_notion_url');
   }
 })();
@@ -2989,7 +2993,8 @@ async function fetchDriveBlobUrlViaProxy(fileId) {
   if (!proxy) throw new Error('尚未設定後端 Proxy URL');
 
   const sep = proxy.includes('?') ? '&' : '?';
-  const res = await fetchWithTimeout(`${proxy}${sep}action=getAudio&fileId=${encodeURIComponent(fileId)}`, {}, 4000);
+  // Apps Script 本身回應就要 2~3 秒，再加 base64 編碼，逾時不能設太短
+  const res = await fetchWithTimeout(`${proxy}${sep}action=getAudio&fileId=${encodeURIComponent(fileId)}`, {}, 12000);
   const json = await res.json();
   // 後端還是舊版時會忽略 action、回傳整包卡片，用有沒有 base64 判斷
   if (!json.success) throw new Error(json.error || 'getAudio failed');
