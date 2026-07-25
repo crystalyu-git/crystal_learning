@@ -1209,8 +1209,32 @@ select.form-input {
   box-shadow: 0 4px 20px color-mix(in srgb, var(--accent-primary) 15%, transparent);
 }
 
-.rating-emoji {
-  font-size: 1.5rem;
+/* 四個難度用顏色區分（沿用各自 hover 的色系），保留 emoji 原本一眼分辨的作用 */
+.rating-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rating-icon svg {
+  width: 26px;
+  height: 26px;
+}
+
+.rating-btn.forgot .rating-icon {
+  color: var(--accent-danger);
+}
+
+.rating-btn.hard .rating-icon {
+  color: var(--accent-warning);
+}
+
+.rating-btn.good .rating-icon {
+  color: var(--accent-success);
+}
+
+.rating-btn.easy .rating-icon {
+  color: var(--accent-primary);
 }
 
 .rating-text {
@@ -2056,6 +2080,9 @@ tr:hover .habit-delete-btn {
 }
 
 .library-card-next {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
   font-size: 0.7rem;
   color: var(--text-muted);
 }
@@ -2095,6 +2122,16 @@ tr:hover .habit-delete-btn {
 
 .modal-overlay.active .modal-content {
   transform: scale(1);
+}
+
+/* Modal 標題前的 icon（取代原本的 emoji 前綴） */
+.heading-icon {
+  width: 1.1em;
+  height: 1.1em;
+  flex-shrink: 0;
+  color: var(--accent-primary);
+  vertical-align: -0.18em;
+  margin-right: 0.4rem;
 }
 
 .modal-icon {
@@ -2137,6 +2174,8 @@ tr:hover .habit-delete-btn {
   font-weight: 600;
   cursor: pointer;
   transition: all var(--transition-fast);
+  /* 中文沒有詞界，寬度不夠時預設會從字中間斷開（「取／消」），一律禁止換行 */
+  white-space: nowrap;
 }
 
 .modal-btn.cancel {
@@ -2378,10 +2417,60 @@ tr:hover .habit-delete-btn {
   color: var(--accent-danger);
 }
 
+/* 狀態前綴 icon 由 state class 決定，JS 只負責文字，不用在每個字串裡塞 emoji/markup */
+.audio-status.uploading::before,
+.audio-status.success::before,
+.audio-status.error::before,
+.audio-status.recording::before {
+  content: "";
+  display: inline-block;
+  width: 0.95em;
+  height: 0.95em;
+  margin-right: 0.3rem;
+  vertical-align: -0.15em;
+  background-color: currentColor;
+  -webkit-mask: center / contain no-repeat var(--status-icon);
+  mask: center / contain no-repeat var(--status-icon);
+}
+
+.audio-status.uploading {
+  --status-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2024%2024%27%20fill%3D%27none%27%20stroke%3D%27black%27%20stroke-width%3D%272.2%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Ccircle%20cx%3D%2712%27%20cy%3D%2712%27%20r%3D%2710%27%2F%3E%3Cpolyline%20points%3D%2712%206%2012%2012%2016%2014%27%2F%3E%3C%2Fsvg%3E");
+}
+
+.audio-status.success {
+  --status-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2024%2024%27%20fill%3D%27none%27%20stroke%3D%27black%27%20stroke-width%3D%272.2%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cpath%20d%3D%27M22%2011.08V12a10%2010%200%201%201-5.93-9.14%27%2F%3E%3Cpolyline%20points%3D%2722%204%2012%2014.01%209%2011.01%27%2F%3E%3C%2Fsvg%3E");
+}
+
+.audio-status.error {
+  --status-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2024%2024%27%20fill%3D%27none%27%20stroke%3D%27black%27%20stroke-width%3D%272.2%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Ccircle%20cx%3D%2712%27%20cy%3D%2712%27%20r%3D%2710%27%2F%3E%3Cline%20x1%3D%2715%27%20y1%3D%279%27%20x2%3D%279%27%20y2%3D%2715%27%2F%3E%3Cline%20x1%3D%279%27%20y1%3D%279%27%20x2%3D%2715%27%20y2%3D%2715%27%2F%3E%3C%2Fsvg%3E");
+}
+
+.audio-status.recording {
+  --status-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2024%2024%27%20fill%3D%27none%27%20stroke%3D%27black%27%20stroke-width%3D%272.2%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cpath%20d%3D%27M12%201a3%203%200%200%200-3%203v8a3%203%200%200%200%206%200V4a3%203%200%200%200-3-3z%27%2F%3E%3Cpath%20d%3D%27M19%2010v2a7%207%200%200%201-14%200v-2%27%2F%3E%3Cline%20x1%3D%2712%27%20y1%3D%2719%27%20x2%3D%2712%27%20y2%3D%2723%27%2F%3E%3Cline%20x1%3D%278%27%20y1%3D%2723%27%20x2%3D%2716%27%20y2%3D%2723%27%2F%3E%3C%2Fsvg%3E");
+  color: var(--accent-danger);
+}
+
 .settings-actions {
   display: flex;
   gap: 0.75rem;
   justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+/* 手機：三顆按鈕平分整列，靠縮 padding 而不是壓縮文字來塞進畫面 */
+@media (max-width: 768px) {
+  /* flex-basis 用 auto、不設 min-width:0，配合 nowrap 讓按鈕最小就是文字寬度；
+     真的塞不下時由 flex-wrap 整顆換行，不會擠成一團或溢出 */
+  .settings-actions .modal-btn {
+    flex: 1 1 auto;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+    justify-content: center;
+  }
+
+  .settings-actions .modal-btn.sync-now {
+    gap: 0.25rem;
+  }
 }
 
 .settings-modal .modal-btn.confirm {

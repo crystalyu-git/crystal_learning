@@ -568,7 +568,7 @@ async function saveCardToNotion(card) {
   } catch (e) {
     console.warn('Save to Database failed:', e);
     updateSyncStatus('error');
-    showToast('⚠️ 儲存失敗: ' + (e.message || String(e)).substring(0, 50));
+    showToast('儲存失敗: ' + (e.message || String(e)).substring(0, 50));
   }
 }
 
@@ -1482,7 +1482,7 @@ function openCardRecordModal(cardId) {
   body.innerHTML = `<tr>
     <td class="habit-name-col"><div class="habit-name-cell"><span class="habit-name-text" title="${escapeHtml(card.word)}">${escapeHtml(card.word)}</span></div></td>
     ${cellsHtml}
-    <td class="habit-streak-col"><span class="habit-streak-badge">🔥 ${maxStreak}</span></td>
+    <td class="habit-streak-col"><span class="habit-streak-badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>${maxStreak}</span></td>
   </tr>`;
 
   modal.classList.add('active');
@@ -1563,7 +1563,7 @@ function renderHabitTracker() {
         </div>
       </td>
       ${cellsHtml}
-      <td class="habit-streak-col"><span class="habit-streak-badge">🔥 ${maxStreak}</span></td>
+      <td class="habit-streak-col"><span class="habit-streak-badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>${maxStreak}</span></td>
     </tr>`;
   }).join('');
 
@@ -2158,7 +2158,7 @@ function renderLibrary() {
           ${card.category ? `<span class="library-card-tag">${escapeHtml(card.category)}</span>` : '<span></span>'}
           <div style="display:flex; align-items:center; gap:0.75rem;">
             <span class="library-card-level ${levelClass}">${levelText}</span>
-            <span class="library-card-next">📅 ${nextReview}</span>
+            <span class="library-card-next"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>${nextReview}</span>
           </div>
         </div>
         <div class="library-card-checkin">
@@ -2263,7 +2263,11 @@ function openEditModal(id) {
   const statusEl = $('#editAudioStatus');
   if (statusEl) { statusEl.style.display = 'none'; statusEl.textContent = ''; }
   const imgStatusEl = $('#editMeaningImageStatus');
-  if (imgStatusEl) { imgStatusEl.style.display = 'none'; imgStatusEl.textContent = _editImageUrl ? '✅ 已有圖片' : ''; }
+  if (imgStatusEl) {
+    imgStatusEl.style.display = 'none';
+    imgStatusEl.className = _editImageUrl ? 'audio-status success' : 'audio-status';
+    imgStatusEl.textContent = _editImageUrl ? '已有圖片' : '';
+  }
   const editTransStatusEl = $('#editTranslateStatus');
   if (editTransStatusEl) { editTransStatusEl.style.display = 'none'; editTransStatusEl.textContent = ''; }
 
@@ -2816,7 +2820,7 @@ function playOrSpeak(card, defaultText, lang, btnElement) {
 async function uploadAudioToDrive(blob, filename, lang, statusEl, targetInput) {
   if (!statusEl || !targetInput) return;
   statusEl.className = 'audio-status uploading';
-  statusEl.textContent = '⏳ 上傳中，請稍候...';
+  statusEl.textContent = '上傳中，請稍候...';
   statusEl.style.display = 'block';
 
   try {
@@ -2830,12 +2834,12 @@ async function uploadAudioToDrive(blob, filename, lang, statusEl, targetInput) {
     const shareUrl = await NotionAPI.uploadAudio(base64Data, filename, blob.type, lang);
     targetInput.value = shareUrl;
     statusEl.className = 'audio-status success';
-    statusEl.textContent = `✅ 音檔上傳成功！(${lang || 'other'})`;
+    statusEl.textContent = `音檔上傳成功！(${lang || 'other'})`;
     showToast('音檔上傳成功！');
   } catch (e) {
     console.error('Audio upload failed:', e);
     statusEl.className = 'audio-status error';
-    statusEl.textContent = '❌ 上傳失敗：' + e.message;
+    statusEl.textContent = '上傳失敗：' + e.message;
     showToast('音檔上傳失敗：' + e.message);
   }
 }
@@ -2884,7 +2888,7 @@ function initAudioActions() {
         mediaRecorder.addEventListener('stop', async () => {
           // Stop all tracks to release microphone
           stream.getTracks().forEach(t => t.stop());
-          recordBtn.textContent = '🎙️ 錄音';
+          recordBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg> 錄音`;
           recordBtn.classList.remove('recording');
 
           const mimeType = mediaRecorder.mimeType || 'audio/webm';
@@ -2899,8 +2903,8 @@ function initAudioActions() {
         recordBtn.classList.add('recording');
 
         if (statusEl) {
-          statusEl.className = 'audio-status';
-          statusEl.textContent = '🔴 錄音中...';
+          statusEl.className = 'audio-status recording';
+          statusEl.textContent = '錄音中...';
           statusEl.style.display = 'block';
         }
       } catch (e) {
@@ -3122,7 +3126,7 @@ async function autoTranslate(word, fromLang, statusEl) {
   const to = 'zh-TW';
 
   statusEl.style.display = 'block';
-  statusEl.textContent = '⏳ 翻譯中...';
+  statusEl.textContent = '翻譯中...';
   statusEl.className = 'audio-status uploading';
 
   try {
@@ -3134,14 +3138,14 @@ async function autoTranslate(word, fromLang, statusEl) {
 
     if (translated && translated !== word) {
       $('#inputMeaning').value = translated;
-      statusEl.textContent = `✅ 翻譯成功！`;
+      statusEl.textContent = `翻譯成功！`;
       statusEl.className = 'audio-status success';
     } else {
-      statusEl.textContent = '❌ 無法翻譯，請手動填寫';
+      statusEl.textContent = '無法翻譯，請手動填寫';
       statusEl.className = 'audio-status error';
     }
   } catch (e) {
-    statusEl.textContent = '❌ 翻譯服務無法連線';
+    statusEl.textContent = '翻譯服務無法連線';
     statusEl.className = 'audio-status error';
   }
 }
@@ -3151,18 +3155,19 @@ async function runOCR(imageFile, _lang) {
   const wordList = $('#ocrWordList');
   const fullText = $('#ocrFullText');
   const confirmBtn = $('#ocrConfirmBtn');
+  const confirmLabel = $('#ocrConfirmLabel');
   let selectedWords = new Set();
 
   overlay.style.display = 'flex';
-  wordList.innerHTML = '<span style="color:var(--text-muted);font-size:0.85rem">🔍 傳送至 Google Vision 辨識中...</span>';
+  wordList.innerHTML = `<span style="display:inline-flex;align-items:center;gap:0.35rem;color:var(--text-muted);font-size:0.85rem"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>傳送至 Google Vision 辨識中...</span>`;
   fullText.textContent = '';
-  confirmBtn.textContent = '✅ 確認填入（0 個字詞）';
+  if (confirmLabel) confirmLabel.textContent = '確認填入（0 個字詞）';
   confirmBtn.disabled = true;
 
   const syncConfirmBtn = () => {
     const n = selectedWords.size;
     confirmBtn.disabled = n === 0;
-    confirmBtn.textContent = `✅ 確認填入（${n} 個字詞）`;
+    if (confirmLabel) confirmLabel.textContent = `確認填入（${n} 個字詞）`;
   };
   confirmBtn.onclick = () => {
     if (selectedWords.size === 0) return;
@@ -3177,11 +3182,11 @@ async function runOCR(imageFile, _lang) {
     }
 
     // Compress image to ≤ 1MB before sending (Cloud Vision limit)
-    wordList.innerHTML = '<span style="color:var(--text-muted);font-size:0.85rem">🖼️ 壓縮圖片中...</span>';
+    wordList.innerHTML = `<span style="display:inline-flex;align-items:center;gap:0.35rem;color:var(--text-muted);font-size:0.85rem"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>壓縮圖片中...</span>`;
     const compressed = await compressImage(imageFile, 800); // 800KB safe margin
     if (!compressed) throw new Error('圖片壓縮失敗');
 
-    wordList.innerHTML = '<span style="color:var(--text-muted);font-size:0.85rem">🔍 Google Vision 辨識中...</span>';
+    wordList.innerHTML = `<span style="display:inline-flex;align-items:center;gap:0.35rem;color:var(--text-muted);font-size:0.85rem"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Google Vision 辨識中...</span>`;
 
     const res = await fetch(proxyUrl, {
       method: 'POST',
@@ -3242,7 +3247,7 @@ async function runOCR(imageFile, _lang) {
 
   } catch (e) {
     console.error('[OCR]', e);
-    wordList.innerHTML = `<span style="color:var(--text-muted);font-size:0.85rem">⚠️ ${e.message || '辨識失敗，請重試'}</span>`;
+    wordList.innerHTML = `<span style="display:inline-flex;align-items:center;gap:0.35rem;color:var(--text-muted);font-size:0.85rem"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>${e.message || '辨識失敗，請重試'}</span>`;
   }
 }
 
@@ -3294,19 +3299,19 @@ async function uploadImageToDrive(file, lang, statusEl) {
   if (statusEl) {
     statusEl.className = 'audio-status uploading';
     statusEl.style.display = 'block';
-    statusEl.textContent = '⏳ 處理圖片中...';
+    statusEl.textContent = '處理圖片中...';
   }
   const compressed = await compressImage(file, 50);
   if (!compressed) {
     if (statusEl) {
       statusEl.className = 'audio-status error';
-      statusEl.textContent = '❌ 圖片處理失敗';
+      statusEl.textContent = '圖片處理失敗';
     }
     return null;
   }
   if (statusEl) {
     statusEl.className = 'audio-status uploading';
-    statusEl.textContent = '⏳ 上傳中，請稍候...';
+    statusEl.textContent = '上傳中，請稍候...';
   }
   try {
     const res = await fetch(url, {
@@ -3324,19 +3329,19 @@ async function uploadImageToDrive(file, lang, statusEl) {
     if (json.success) {
       if (statusEl) {
         statusEl.className = 'audio-status success';
-        statusEl.textContent = '✅ 圖片上傳成功！';
+        statusEl.textContent = '圖片上傳成功！';
       }
       return json.url;
     }
     if (statusEl) {
       statusEl.className = 'audio-status error';
-      statusEl.textContent = '❌ 上傳失敗：' + (json.error || '');
+      statusEl.textContent = '上傳失敗：' + (json.error || '');
     }
     return null;
   } catch (e) {
     if (statusEl) {
       statusEl.className = 'audio-status error';
-      statusEl.textContent = '❌ 上傳失敗';
+      statusEl.textContent = '上傳失敗';
     }
     return null;
   }
@@ -3443,7 +3448,7 @@ function initSmartInput() {
       const lang = getLangValue('editLang') || getLangValue('inputLang');
       // 翻譯結果直接填入 editMeaning
       editTranslateStatus.style.display = 'block';
-      editTranslateStatus.textContent = '⏳ 翻譯中...';
+      editTranslateStatus.textContent = '翻譯中...';
       editTranslateStatus.className = 'audio-status uploading';
       const from = MYMEMORY_LANG_MAP[getLangCode(lang) || lang] || 'en';
       try {
@@ -3454,14 +3459,14 @@ function initSmartInput() {
         const translated = data?.responseData?.translatedText;
         if (translated && translated !== word) {
           $('#editMeaning').value = translated;
-          editTranslateStatus.textContent = '✅ 翻譯成功！';
+          editTranslateStatus.textContent = '翻譯成功！';
           editTranslateStatus.className = 'audio-status success';
         } else {
-          editTranslateStatus.textContent = '❌ 無法翻譯，請手動填寫';
+          editTranslateStatus.textContent = '無法翻譯，請手動填寫';
           editTranslateStatus.className = 'audio-status error';
         }
       } catch (e) {
-        editTranslateStatus.textContent = '❌ 翻譯服務無法連線';
+        editTranslateStatus.textContent = '翻譯服務無法連線';
         editTranslateStatus.className = 'audio-status error';
       }
     });
