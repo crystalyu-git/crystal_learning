@@ -163,18 +163,70 @@ function applyTheme(theme) {
   updateFavicon();
 }
 
-// 依目前主題色（--accent-primary）重新產生 favicon
-// 瀏覽器對「同一個 <link> 只改 href」不一定會重新讀取，要整個換掉節點才會生效
-function updateFavicon() {
-  const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent-primary').trim() || '#6366f1';
-  const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 28'><path d='M14 2L2 8L14 14L26 8L14 2Z' stroke='${accent}' stroke-width='2' fill='none'/><path d='M2 20L14 26L26 20' stroke='${accent}' stroke-width='2' fill='none'/><path d='M2 14L14 20L26 14' stroke='${accent}' stroke-width='2' fill='none'/></svg>`;
+// 品牌圖示（與 nav-brand / login-brand 同一組路徑）
+// canvas 光柵化時 SVG 必須帶 width/height，否則 Safari 會畫不出來
+function buildBrandSvg(accent, size) {
+  const wh = size ? ` width='${size}' height='${size}'` : '';
+  return `<svg xmlns='http://www.w3.org/2000/svg'${wh} viewBox='0 0 28 28'><path d='M14 2L2 8L14 14L26 8L14 2Z' stroke='${accent}' stroke-width='2' fill='none'/><path d='M2 20L14 26L26 20' stroke='${accent}' stroke-width='2' fill='none'/><path d='M2 14L14 20L26 14' stroke='${accent}' stroke-width='2' fill='none'/></svg>`;
+}
 
-  document.querySelectorAll('link[rel="icon"]').forEach(el => el.remove());
+// 手機端多半不吃 SVG favicon（iOS Safari 完全不支援），改用 canvas 產生 PNG
+// bgColor 有值時填實心底色：iOS 加入主畫面會把透明背景填成黑色
+function renderBrandPng(size, accent, bgColor) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        let pad = 0;
+        if (bgColor) {
+          ctx.fillStyle = bgColor;
+          ctx.fillRect(0, 0, size, size);
+          pad = Math.round(size * 0.16); // 留邊，避免 iOS 圓角把圖示切掉
+        }
+        ctx.drawImage(img, pad, pad, size - pad * 2, size - pad * 2);
+        resolve(canvas.toDataURL('image/png'));
+      } catch (e) { reject(e); }
+    };
+    img.onerror = reject;
+    img.src = 'data:image/svg+xml,' + encodeURIComponent(buildBrandSvg(accent, size));
+  });
+}
+
+function appendIconLink(rel, href, type, sizes) {
   const link = document.createElement('link');
-  link.rel = 'icon';
-  link.type = 'image/svg+xml';
-  link.href = 'data:image/svg+xml,' + encodeURIComponent(svg);
+  link.rel = rel;
+  link.href = href;
+  if (type) link.type = type;
+  if (sizes) link.sizes = sizes;
   document.head.appendChild(link);
+}
+
+// 依目前主題色（--accent-primary）重新產生 favicon（桌機 SVG + 手機 PNG 同一套規則）
+// 瀏覽器對「同一個 <link> 只改 href」不一定會重新讀取，要整個換掉節點才會生效
+let faviconToken = 0;
+function updateFavicon() {
+  const cs = getComputedStyle(document.documentElement);
+  const accent = cs.getPropertyValue('--accent-primary').trim() || '#6366f1';
+  const bg = cs.getPropertyValue('--bg-primary').trim() || '#0a0a1a';
+
+  document.querySelectorAll('link[rel="icon"], link[rel="apple-touch-icon"]').forEach(el => el.remove());
+  appendIconLink('icon', 'data:image/svg+xml,' + encodeURIComponent(buildBrandSvg(accent)), 'image/svg+xml');
+
+  // PNG 是非同步產生的，期間若又換過主題就丟棄這批結果
+  const token = ++faviconToken;
+  Promise.all([
+    renderBrandPng(64, accent, null),   // 手機瀏覽器分頁：透明底
+    renderBrandPng(192, accent, null),
+    renderBrandPng(180, accent, bg)     // iOS 加入主畫面：實心底
+  ]).then(([png64, png192, png180]) => {
+    if (token !== faviconToken) return;
+    appendIconLink('icon', png64, 'image/png', '64x64');
+    appendIconLink('icon', png192, 'image/png', '192x192');
+    appendIconLink('apple-touch-icon', png180, 'image/png', '180x180');
+  }).catch(() => { });
 }
 
 function loadTheme() {
