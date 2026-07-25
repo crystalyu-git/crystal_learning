@@ -943,19 +943,37 @@ function speakText(text, lang = 'en-US', btnElement = null) {
   // Animate button
   if (btnElement) {
     btnElement.classList.add('speaking');
-    utterance.onend = () => btnElement.classList.remove('speaking');
+    let stopped = false;
+    const stopAnimation = () => {
+      if (stopped) return;
+      stopped = true;
+      btnElement.classList.remove('speaking');
+    };
+    utterance.onend = stopAnimation;
     utterance.onerror = (e) => {
       // Chrome sometimes fires 'canceled' falsely during start or immediately after cancel
       if (e.error !== 'canceled') {
         console.error("[TTS] Playback Error:", e);
       }
-      btnElement.classList.remove('speaking');
+      stopAnimation();
     };
+
+    // iOS 若在非使用者手勢中呼叫 speak() 會被靜默擋掉，onend / onerror 都不會來，
+    // 沒有這個看門狗按鈕會一直閃下去
+    const watchdog = setInterval(() => {
+      if (stopped) { clearInterval(watchdog); return; }
+      if (!window.speechSynthesis.speaking && !window.speechSynthesis.pending) {
+        clearInterval(watchdog);
+        stopAnimation();
+      }
+    }, 1000);
   }
 
   // Play: use a delay if we had to cancel first, otherwise play immediately
   const delay = wasSpeaking ? 200 : 0;
   setTimeout(() => {
+    // Safari/iOS 的引擎偶爾會卡在 paused，不 resume 的話 speak() 進去就沒下文
+    if (window.speechSynthesis.paused) window.speechSynthesis.resume();
     window.speechSynthesis.speak(utterance);
     console.log(`[TTS] Speaking: "${text}"`);
   }, delay);
@@ -2726,8 +2744,26 @@ function unlockAudioPlayback() {
     if (p && p.catch) p.catch(() => { });
   } catch (e) { }
 }
-document.addEventListener('touchend', unlockAudioPlayback, true);
-document.addEventListener('click', unlockAudioPlayback, true);
+// speechSynthesis 在 iOS 一樣要先在使用者手勢中 speak 過一次才會解鎖。
+// 系統發音是「Drive 全部失敗後」才叫的，那時早就脫離手勢了，不先解鎖就會被靜默擋掉、完全沒聲音
+let ttsUnlocked = false;
+function unlockSpeechSynthesis() {
+  if (ttsUnlocked || !window.speechSynthesis) return;
+  ttsUnlocked = true;
+  try {
+    const u = new SpeechSynthesisUtterance(' ');
+    u.volume = 0;
+    u.rate = 10; // 盡快結束，不要卡住後面真正要唸的內容
+    window.speechSynthesis.speak(u);
+  } catch (e) { }
+}
+
+function unlockMediaPlayback() {
+  unlockAudioPlayback();
+  unlockSpeechSynthesis();
+}
+document.addEventListener('touchend', unlockMediaPlayback, true);
+document.addEventListener('click', unlockMediaPlayback, true);
 
 function playOrSpeak(card, defaultText, lang, btnElement) {
   const langCode = getLangCode(lang);
@@ -2866,12 +2902,16 @@ function initAudioActions() {
 // Global audio object to prevent overlapping playback
 let currentAudio = null;
 
-// fileId → blob object URL（後端代抓過的音檔，重播直接用不再打後端）
+// fileId → blob object URL（抓過的音檔，重播直接用不再連網）
 const driveBlobCache = {};
+
+// fileId → 上次全部失敗的時間，這段期間內再點就直接跳系統發音，不重跑一輪等待
+const driveFailCache = {};
+const DRIVE_FAIL_TTL = 60 * 1000;
 
 // 在共用的 audio 元素上播放；resolve = 真的開始播了，reject = 這個來源不能用
 // 重點：play() 要在同一個 tick 內叫，中間不能 await，否則 iOS 會判定脫離使用者手勢
-function playOnSharedAudio(src, btnElement, timeoutMs = 2500) {
+function playOnSharedAudio(src, btnElement, timeoutMs = 2000) {
   return new Promise((resolve, reject) => {
     const audio = getSharedAudio();
     audio.onended = null;
@@ -2918,9 +2958,17 @@ function driveDownloadUrl(fileId) {
 // 直接用 <audio src> 載會被 Cross-Origin-Resource-Policy: same-site 擋掉（Safari 嚴格執行，Chrome 較寬鬆）。
 // 但這個網址有 ACAO: *，改用 fetch 走 CORS 模式就能拿到內容，轉成 blob URL 後等同同源，
 // 連 Content-Disposition: attachment、303 轉址、Range 支援全部一併繞開。
+// 失敗要「快點放棄」才不會讓使用者乾等，所有連網動作都掛上逾時
+function fetchWithTimeout(url, options = {}, timeoutMs = 3000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  return fetch(url, { ...options, signal: ctrl.signal })
+    .finally(() => clearTimeout(timer));
+}
+
 async function fetchDriveBlobUrl(fileId) {
   if (driveBlobCache[fileId]) return driveBlobCache[fileId];
-  const res = await fetch(driveDownloadUrl(fileId), { mode: 'cors', credentials: 'omit' });
+  const res = await fetchWithTimeout(driveDownloadUrl(fileId), { mode: 'cors', credentials: 'omit' }, 3000);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const blob = await res.blob();
   // 檔案太大時 Drive 會先回一頁病毒掃描確認頁，不是音檔
@@ -2930,18 +2978,25 @@ async function fetchDriveBlobUrl(fileId) {
   return blobUrl;
 }
 
+// 後端沒部署 getAudio 端點的話，這條每次都白跑，確認過一次就整個 session 跳過
+let driveProxyUnavailable = false;
+
 // 再退一步：請後端把檔案轉 base64 回來（Google 之後改 CORS 政策時的保險）
 async function fetchDriveBlobUrlViaProxy(fileId) {
   if (driveBlobCache[fileId]) return driveBlobCache[fileId];
+  if (driveProxyUnavailable) throw new Error('後端無 getAudio 端點');
   const proxy = getNotionProxyUrl();
   if (!proxy) throw new Error('尚未設定後端 Proxy URL');
 
   const sep = proxy.includes('?') ? '&' : '?';
-  const res = await fetch(`${proxy}${sep}action=getAudio&fileId=${encodeURIComponent(fileId)}`);
+  const res = await fetchWithTimeout(`${proxy}${sep}action=getAudio&fileId=${encodeURIComponent(fileId)}`, {}, 4000);
   const json = await res.json();
   // 後端還是舊版時會忽略 action、回傳整包卡片，用有沒有 base64 判斷
   if (!json.success) throw new Error(json.error || 'getAudio failed');
-  if (!json.base64) throw new Error('後端尚未重新部署');
+  if (!json.base64) {
+    driveProxyUnavailable = true;
+    throw new Error('後端尚未重新部署');
+  }
 
   const binary = atob(json.base64);
   const bytes = new Uint8Array(binary.length);
@@ -2959,6 +3014,14 @@ async function playGoogleDriveAudio(url, btnElement, onErrorCallback) {
   }
 
   const fileId = fileIdMatch[1];
+
+  // 這個檔案剛剛才全部試過失敗，不用再讓使用者等一輪，直接退回系統發音
+  const failedAt = driveFailCache[fileId];
+  if (failedAt && Date.now() - failedAt < DRIVE_FAIL_TTL) {
+    if (onErrorCallback) onErrorCallback();
+    return;
+  }
+
   if (btnElement) btnElement.classList.add('speaking');
 
   // 抓過就直接播，不再連網
@@ -2982,7 +3045,7 @@ async function playGoogleDriveAudio(url, btnElement, onErrorCallback) {
   for (const [name, getBlobUrl] of strategies) {
     try {
       const blobUrl = await getBlobUrl();
-      await playOnSharedAudio(blobUrl, btnElement, 10000);
+      await playOnSharedAudio(blobUrl, btnElement, 4000);
       return; // Success
     } catch (err) {
       console.warn(`${name} failed:`, err);
@@ -2991,16 +3054,16 @@ async function playGoogleDriveAudio(url, btnElement, onErrorCallback) {
   }
 
   // 最後才試直連 <audio src>：CORP 會擋掉的就是這條，但 Chrome 之類寬鬆的瀏覽器還是能播
-  for (const candidate of [driveDownloadUrl(fileId), `https://drive.google.com/uc?export=download&id=${fileId}`]) {
-    try {
-      await playOnSharedAudio(candidate, btnElement);
-      return;
-    } catch (err) {
-      console.warn(`Direct playback failed for ${candidate}:`, err);
-    }
+  // 只試最終供檔網址就好，drive.google.com/uc 只是 303 轉到同一個位置，試兩次是白等
+  try {
+    await playOnSharedAudio(driveDownloadUrl(fileId), btnElement);
+    return;
+  } catch (err) {
+    console.warn('Direct playback failed:', err);
   }
 
   if (btnElement) btnElement.classList.remove('speaking');
+  driveFailCache[fileId] = Date.now();
 
   // standalone（加入主畫面）開新分頁多半沒反應，直接退回系統發音比較有用
   if (isStandaloneApp()) {
