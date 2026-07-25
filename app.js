@@ -2674,6 +2674,61 @@ document.addEventListener('keydown', (e) => {
 });
 
 // ── Audio Helpers ──
+
+// 加入主畫面的 standalone 模式沒有分頁可開，window.open 幾乎無效，失敗時要改走別的路
+function isStandaloneApp() {
+  return window.navigator.standalone === true ||
+    (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+}
+
+// iOS 規定 <audio> 必須先在使用者手勢中 play 過，之後才允許用程式控制播放。
+// 每次 new Audio() 都是新元素、都要重新解鎖，所以全程共用同一顆。
+let sharedAudio = null;
+let audioUnlocked = false;
+let silentWavUrl = null;
+
+function getSharedAudio() {
+  if (!sharedAudio) {
+    sharedAudio = new Audio();
+    sharedAudio.preload = 'auto';
+    sharedAudio.playsInline = true;
+    sharedAudio.setAttribute('playsinline', '');
+  }
+  return sharedAudio;
+}
+
+// 產生一段極短的無聲 wav 當解鎖用音源
+function getSilentWavUrl() {
+  if (silentWavUrl) return silentWavUrl;
+  const sampleRate = 8000;
+  const samples = Math.round(sampleRate * 0.05);
+  const buf = new ArrayBuffer(44 + samples * 2);
+  const view = new DataView(buf);
+  const writeStr = (off, s) => { for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i)); };
+  writeStr(0, 'RIFF'); view.setUint32(4, 36 + samples * 2, true); writeStr(8, 'WAVE');
+  writeStr(12, 'fmt '); view.setUint32(16, 16, true); view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true); view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+  writeStr(36, 'data'); view.setUint32(40, samples * 2, true);
+  silentWavUrl = URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+  return silentWavUrl;
+}
+
+// capture 階段先跑，確保連「第一次點發音鈕」都已經解鎖
+function unlockAudioPlayback() {
+  if (audioUnlocked) return;
+  const audio = getSharedAudio();
+  if (!audio.paused || audio.currentTime > 0) { audioUnlocked = true; return; }
+  audioUnlocked = true;
+  try {
+    audio.src = getSilentWavUrl();
+    const p = audio.play();
+    if (p && p.catch) p.catch(() => { });
+  } catch (e) { }
+}
+document.addEventListener('touchend', unlockAudioPlayback, true);
+document.addEventListener('click', unlockAudioPlayback, true);
+
 function playOrSpeak(card, defaultText, lang, btnElement) {
   const langCode = getLangCode(lang);
   if (card.audioUrl) {
@@ -2693,15 +2748,7 @@ function playOrSpeak(card, defaultText, lang, btnElement) {
     }
 
     if (card.audioUrl.match(/\.(mp3|wav|ogg|m4a|aac)$/i)) {
-      if (btnElement) btnElement.classList.add('speaking');
-      const audio = new Audio(card.audioUrl);
-      audio.onended = () => { if (btnElement) btnElement.classList.remove('speaking'); };
-      audio.onerror = () => {
-        if (btnElement) btnElement.classList.remove('speaking');
-        if (langCode) speakText(defaultText, langCode, btnElement);
-      };
-      audio.play().catch(_e => {
-        if (btnElement) btnElement.classList.remove('speaking');
+      playDirectAudio(card.audioUrl, btnElement, () => {
         if (langCode) speakText(defaultText, langCode, btnElement);
       });
       return;
@@ -2819,88 +2866,126 @@ function initAudioActions() {
 // Global audio object to prevent overlapping playback
 let currentAudio = null;
 
-// Returns a Promise that resolves with a ready Audio object, or rejects on error/timeout
-function tryLoadAudio(url, timeoutMs = 4000) {
+// fileId → blob object URL（後端代抓過的音檔，重播直接用不再打後端）
+const driveBlobCache = {};
+
+// 在共用的 audio 元素上播放；resolve = 真的開始播了，reject = 這個來源不能用
+// 重點：play() 要在同一個 tick 內叫，中間不能 await，否則 iOS 會判定脫離使用者手勢
+function playOnSharedAudio(src, btnElement, timeoutMs = 5000) {
   return new Promise((resolve, reject) => {
-    const audio = new Audio();
-    const timer = setTimeout(() => {
-      audio.src = '';
-      reject(new Error('timeout'));
-    }, timeoutMs);
-    audio.addEventListener('canplay', () => { clearTimeout(timer); resolve(audio); });
-    audio.addEventListener('error', () => { clearTimeout(timer); reject(audio.error || new Error('error')); });
-    audio.src = url;
-    audio.load();
+    const audio = getSharedAudio();
+    audio.onended = null;
+    audio.onerror = null;
+    try { audio.pause(); } catch (e) { }
+
+    let settled = false;
+    let timer = null;
+    const fail = (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      audio.onerror = null;
+      reject(err || new Error('audio error'));
+    };
+    const ok = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      currentAudio = audio;
+      if (btnElement) btnElement.classList.add('speaking');
+      audio.onended = () => { if (btnElement) btnElement.classList.remove('speaking'); };
+      audio.onerror = () => { if (btnElement) btnElement.classList.remove('speaking'); };
+      resolve();
+    };
+
+    timer = setTimeout(() => fail(new Error('timeout')), timeoutMs);
+    audio.onerror = () => fail(audio.error);
+    audio.src = src;
+    try {
+      const p = audio.play();
+      if (p && p.then) p.then(ok).catch(fail);
+      else ok();
+    } catch (e) { fail(e); }
   });
 }
 
+// Drive 直連候選：lh3 是 CDN，支援 Range 且不帶 attachment header，iOS 最吃這一種
+function driveAudioCandidates(fileId) {
+  return [
+    `https://lh3.googleusercontent.com/d/${fileId}`,
+    `https://drive.google.com/uc?export=download&id=${fileId}`,
+    `https://docs.google.com/uc?export=download&id=${fileId}`,
+  ];
+}
+
+// 直連全掛時的最後手段：請後端把檔案轉 base64 回來，做成 blob URL 再播
+// blob URL 等同同源，不受 Drive 的 redirect / Range / CORS 限制
+async function fetchDriveAudioBlobUrl(fileId) {
+  if (driveBlobCache[fileId]) return driveBlobCache[fileId];
+  const proxy = getNotionProxyUrl();
+  if (!proxy) throw new Error('尚未設定後端 Proxy URL');
+
+  const sep = proxy.includes('?') ? '&' : '?';
+  const res = await fetch(`${proxy}${sep}action=getAudio&fileId=${encodeURIComponent(fileId)}`);
+  const json = await res.json();
+  if (!json.success || !json.base64) throw new Error(json.error || 'getAudio failed');
+
+  const binary = atob(json.base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const blobUrl = URL.createObjectURL(new Blob([bytes], { type: json.mimeType || 'audio/mpeg' }));
+  driveBlobCache[fileId] = blobUrl;
+  return blobUrl;
+}
+
 async function playGoogleDriveAudio(url, btnElement, onErrorCallback) {
-  const fileIdMatch = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  const fileIdMatch = url.match(/\/d\/([a-zA-Z0-9_-]+)/) || url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
   if (!fileIdMatch) {
     playDirectAudio(url, btnElement, onErrorCallback);
     return;
   }
 
   const fileId = fileIdMatch[1];
-
   if (btnElement) btnElement.classList.add('speaking');
-  if (currentAudio) { currentAudio.pause(); currentAudio.currentTime = 0; }
 
-  // Try multiple Drive URL formats in order:
-  const candidates = [
-    `https://docs.google.com/uc?export=download&id=${fileId}`,
-    `https://drive.google.com/uc?export=download&id=${fileId}`,
-  ];
+  // 抓過的直接用快取，省一輪失敗重試
+  const candidates = driveBlobCache[fileId]
+    ? [driveBlobCache[fileId]]
+    : driveAudioCandidates(fileId);
 
   for (const candidate of candidates) {
     try {
-      const audio = await tryLoadAudio(candidate, 5000);
-      currentAudio = audio;
-      audio.addEventListener('ended', () => {
-        if (btnElement) btnElement.classList.remove('speaking');
-      });
-      audio.addEventListener('error', () => {
-        if (btnElement) btnElement.classList.remove('speaking');
-        if (onErrorCallback) onErrorCallback();
-      });
-      await audio.play();
+      await playOnSharedAudio(candidate, btnElement);
       return; // Success
     } catch (err) {
       console.warn(`Failed to play ${candidate}:`, err);
-      // This candidate failed, try the next one
     }
   }
 
-  // All candidates failed. 
-  if (btnElement) btnElement.classList.remove('speaking');
-  showToast('Google Drive 阻擋了直接播放，為您開啟新分頁聆聽！');
+  try {
+    const blobUrl = await fetchDriveAudioBlobUrl(fileId);
+    await playOnSharedAudio(blobUrl, btnElement);
+    return;
+  } catch (err) {
+    console.warn('Drive blob fallback failed:', err);
+  }
 
-  // As a last fallback, open it in a new tab so they can at least hear it
+  if (btnElement) btnElement.classList.remove('speaking');
+
+  // standalone（加入主畫面）開新分頁多半沒反應，直接退回系統發音比較有用
+  if (isStandaloneApp()) {
+    showToast('無法播放此 Drive 音檔，改用系統發音');
+    if (onErrorCallback) onErrorCallback();
+    return;
+  }
+
+  showToast('Google Drive 阻擋了直接播放，為您開啟新分頁聆聽！');
   window.open(url, '_blank');
 }
 
 function playDirectAudio(url, btnElement, onErrorCallback) {
-  if (currentAudio) {
-    currentAudio.pause();
-    currentAudio.currentTime = 0;
-  }
-
-  if (btnElement) btnElement.classList.add('speaking');
-
-  currentAudio = new Audio(url);
-
-  currentAudio.addEventListener('ended', () => {
-    if (btnElement) btnElement.classList.remove('speaking');
-  });
-
-  currentAudio.addEventListener('error', (e) => {
-    console.warn("Failed to play custom audio:", e);
-    if (btnElement) btnElement.classList.remove('speaking');
-    if (onErrorCallback) onErrorCallback();
-  });
-
-  currentAudio.play().catch(e => {
-    console.warn("Audio play blocked or failed:", e);
+  playOnSharedAudio(url, btnElement).catch(e => {
+    console.warn('Audio play blocked or failed:', e);
     if (btnElement) btnElement.classList.remove('speaking');
     if (onErrorCallback) onErrorCallback();
   });

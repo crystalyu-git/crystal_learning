@@ -61,9 +61,13 @@ function doOptions(e) {
         .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
-// 處理 GET 請求 — 讀取所有卡片
+// 處理 GET 請求 — 讀取所有卡片；action=getAudio 時改回傳單一音檔的 base64
 function doGet(e) {
     try {
+        if (e && e.parameter && e.parameter.action === 'getAudio') {
+            return getAudioBase64(e.parameter.fileId);
+        }
+
         const cards = queryAllNotionPages();
         return jsonResponse({ success: true, cards: cards });
     } catch (error) {
@@ -353,6 +357,29 @@ function performOCR(base64Data, mimeType) {
 
     } catch (error) {
         return jsonResponse({ success: false, error: 'OCR error: ' + error.toString() });
+    }
+}
+
+// 回傳 Drive 音檔的 base64
+// iOS 加入主畫面（standalone）直連 Drive 播不出來，前端改抓 base64 轉 blob URL 播放
+function getAudioBase64(fileId) {
+    try {
+        if (!fileId) return jsonResponse({ success: false, error: 'Missing fileId' });
+
+        const file = DriveApp.getFileById(fileId);
+        const MAX_BYTES = 20 * 1024 * 1024; // 太大會爆 Apps Script 執行限制
+        if (file.getSize() > MAX_BYTES) {
+            return jsonResponse({ success: false, error: 'File too large for base64 proxy' });
+        }
+
+        const blob = file.getBlob();
+        return jsonResponse({
+            success: true,
+            mimeType: blob.getContentType() || 'audio/mpeg',
+            base64: Utilities.base64Encode(blob.getBytes())
+        });
+    } catch (error) {
+        return jsonResponse({ success: false, error: 'getAudio error: ' + error.toString() });
     }
 }
 
