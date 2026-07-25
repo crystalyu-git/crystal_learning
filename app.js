@@ -2871,7 +2871,7 @@ const driveBlobCache = {};
 
 // 在共用的 audio 元素上播放；resolve = 真的開始播了，reject = 這個來源不能用
 // 重點：play() 要在同一個 tick 內叫，中間不能 await，否則 iOS 會判定脫離使用者手勢
-function playOnSharedAudio(src, btnElement, timeoutMs = 5000) {
+function playOnSharedAudio(src, btnElement, timeoutMs = 2500) {
   return new Promise((resolve, reject) => {
     const audio = getSharedAudio();
     audio.onended = null;
@@ -2909,18 +2909,29 @@ function playOnSharedAudio(src, btnElement, timeoutMs = 5000) {
   });
 }
 
-// Drive 直連候選：lh3 是 CDN，支援 Range 且不帶 attachment header，iOS 最吃這一種
-function driveAudioCandidates(fileId) {
-  return [
-    `https://lh3.googleusercontent.com/d/${fileId}`,
-    `https://drive.google.com/uc?export=download&id=${fileId}`,
-    `https://docs.google.com/uc?export=download&id=${fileId}`,
-  ];
+// Drive 真正供檔的網址（drive.google.com/uc 只是 303 轉到這裡）
+// 回 audio/mpeg + accept-ranges: bytes + access-control-allow-origin: *
+function driveDownloadUrl(fileId) {
+  return `https://drive.usercontent.google.com/download?id=${fileId}&export=download`;
 }
 
-// 直連全掛時的最後手段：請後端把檔案轉 base64 回來，做成 blob URL 再播
-// blob URL 等同同源，不受 Drive 的 redirect / Range / CORS 限制
-async function fetchDriveAudioBlobUrl(fileId) {
+// 直接用 <audio src> 載會被 Cross-Origin-Resource-Policy: same-site 擋掉（Safari 嚴格執行，Chrome 較寬鬆）。
+// 但這個網址有 ACAO: *，改用 fetch 走 CORS 模式就能拿到內容，轉成 blob URL 後等同同源，
+// 連 Content-Disposition: attachment、303 轉址、Range 支援全部一併繞開。
+async function fetchDriveBlobUrl(fileId) {
+  if (driveBlobCache[fileId]) return driveBlobCache[fileId];
+  const res = await fetch(driveDownloadUrl(fileId), { mode: 'cors', credentials: 'omit' });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const blob = await res.blob();
+  // 檔案太大時 Drive 會先回一頁病毒掃描確認頁，不是音檔
+  if (blob.type && blob.type.indexOf('text/html') === 0) throw new Error('Drive 回傳確認頁');
+  const blobUrl = URL.createObjectURL(blob);
+  driveBlobCache[fileId] = blobUrl;
+  return blobUrl;
+}
+
+// 再退一步：請後端把檔案轉 base64 回來（Google 之後改 CORS 政策時的保險）
+async function fetchDriveBlobUrlViaProxy(fileId) {
   if (driveBlobCache[fileId]) return driveBlobCache[fileId];
   const proxy = getNotionProxyUrl();
   if (!proxy) throw new Error('尚未設定後端 Proxy URL');
@@ -2928,7 +2939,9 @@ async function fetchDriveAudioBlobUrl(fileId) {
   const sep = proxy.includes('?') ? '&' : '?';
   const res = await fetch(`${proxy}${sep}action=getAudio&fileId=${encodeURIComponent(fileId)}`);
   const json = await res.json();
-  if (!json.success || !json.base64) throw new Error(json.error || 'getAudio failed');
+  // 後端還是舊版時會忽略 action、回傳整包卡片，用有沒有 base64 判斷
+  if (!json.success) throw new Error(json.error || 'getAudio failed');
+  if (!json.base64) throw new Error('後端尚未重新部署');
 
   const binary = atob(json.base64);
   const bytes = new Uint8Array(binary.length);
@@ -2948,33 +2961,50 @@ async function playGoogleDriveAudio(url, btnElement, onErrorCallback) {
   const fileId = fileIdMatch[1];
   if (btnElement) btnElement.classList.add('speaking');
 
-  // 抓過的直接用快取，省一輪失敗重試
-  const candidates = driveBlobCache[fileId]
-    ? [driveBlobCache[fileId]]
-    : driveAudioCandidates(fileId);
-
-  for (const candidate of candidates) {
+  // 抓過就直接播，不再連網
+  if (driveBlobCache[fileId]) {
     try {
-      await playOnSharedAudio(candidate, btnElement);
-      return; // Success
+      await playOnSharedAudio(driveBlobCache[fileId], btnElement);
+      return;
     } catch (err) {
-      console.warn(`Failed to play ${candidate}:`, err);
+      console.warn('Cached blob playback failed:', err);
+      URL.revokeObjectURL(driveBlobCache[fileId]);
+      delete driveBlobCache[fileId];
     }
   }
 
-  try {
-    const blobUrl = await fetchDriveAudioBlobUrl(fileId);
-    await playOnSharedAudio(blobUrl, btnElement);
-    return;
-  } catch (err) {
-    console.warn('Drive blob fallback failed:', err);
+  const errors = [];
+  const strategies = [
+    ['drive-cors-blob', () => fetchDriveBlobUrl(fileId)],
+    ['proxy-base64-blob', () => fetchDriveBlobUrlViaProxy(fileId)],
+  ];
+
+  for (const [name, getBlobUrl] of strategies) {
+    try {
+      const blobUrl = await getBlobUrl();
+      await playOnSharedAudio(blobUrl, btnElement, 10000);
+      return; // Success
+    } catch (err) {
+      console.warn(`${name} failed:`, err);
+      errors.push(`${name}: ${err.message}`);
+    }
+  }
+
+  // 最後才試直連 <audio src>：CORP 會擋掉的就是這條，但 Chrome 之類寬鬆的瀏覽器還是能播
+  for (const candidate of [driveDownloadUrl(fileId), `https://drive.google.com/uc?export=download&id=${fileId}`]) {
+    try {
+      await playOnSharedAudio(candidate, btnElement);
+      return;
+    } catch (err) {
+      console.warn(`Direct playback failed for ${candidate}:`, err);
+    }
   }
 
   if (btnElement) btnElement.classList.remove('speaking');
 
   // standalone（加入主畫面）開新分頁多半沒反應，直接退回系統發音比較有用
   if (isStandaloneApp()) {
-    showToast('無法播放此 Drive 音檔，改用系統發音');
+    showToast(`音檔播放失敗（${errors[0] || '未知原因'}），改用系統發音`);
     if (onErrorCallback) onErrorCallback();
     return;
   }
