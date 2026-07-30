@@ -1832,8 +1832,11 @@ tr:hover .habit-delete-btn {
   transition: all var(--transition-fast);
 }
 
-.habit-check-cell:hover .habit-check-dot {
-  border-color: var(--accent-primary);
+/* 僅在真正支援 hover 的裝置（滑鼠）套用，避免觸控裝置把第一下點擊誤判為 hover 而需點兩次 */
+@media (hover: hover) and (pointer: fine) {
+  .habit-check-cell:hover .habit-check-dot {
+    border-color: var(--accent-primary);
+  }
 }
 
 .habit-check-cell.checked .habit-check-dot {
