@@ -2036,6 +2036,77 @@ function finishReview() {
 const LIBRARY_DEFAULT_LIMIT = 21;
 let libraryShowAll = false;
 
+// ── 分類篩選的自訂下拉 ──
+// 不用原生 <datalist>：iOS Safari 不會為它畫下拉選單，選項只會出現在鍵盤候選字條，
+// 使用者看起來就是「點了沒反應」。
+let _filterCategories = [];
+
+function renderCategorySuggestions() {
+  const panel = $('#filterCategoryList');
+  const input = $('#filterCategory');
+  if (!panel || !input) return;
+
+  const query = input.value.trim().toLowerCase();
+  // 已完全等於某個分類時列出全部，方便直接改選其他分類
+  const exact = _filterCategories.some(c => c.toLowerCase() === query);
+  const list = (!query || exact)
+    ? _filterCategories
+    : _filterCategories.filter(c => c.toLowerCase().includes(query));
+
+  if (list.length === 0) {
+    closeCategorySuggestions();
+    return;
+  }
+  panel.innerHTML = list.map(cat =>
+    `<div class="filter-suggestion-item" role="option" data-val="${escapeHtml(cat)}">${escapeHtml(cat)}</div>`
+  ).join('');
+  panel.style.display = 'block';
+  input.setAttribute('aria-expanded', 'true');
+}
+
+function openCategorySuggestions() {
+  renderCategorySuggestions();
+}
+
+function closeCategorySuggestions() {
+  const panel = $('#filterCategoryList');
+  if (!panel) return;
+  panel.style.display = 'none';
+  $('#filterCategory')?.setAttribute('aria-expanded', 'false');
+}
+
+function initCategorySuggestions() {
+  const input = $('#filterCategory');
+  const panel = $('#filterCategoryList');
+  const wrapper = input?.closest('.filter-select-wrapper');
+  if (!input || !panel || !wrapper) return;
+
+  input.addEventListener('focus', openCategorySuggestions);
+  // 已聚焦時再點一下可重新展開（例如剛選完關閉後）
+  input.addEventListener('click', openCategorySuggestions);
+
+  // 用 pointerdown 並擋掉預設行為，避免 input 先 blur 導致面板消失後才收到 click
+  panel.addEventListener('pointerdown', (e) => {
+    const item = e.target.closest('.filter-suggestion-item');
+    if (!item) return;
+    e.preventDefault();
+    input.value = item.dataset.val;
+    $('#clearFilterCategory').style.display = 'flex';
+    wrapper.classList.add('has-value');
+    libraryShowAll = false;
+    closeCategorySuggestions();
+    renderLibrary();
+  });
+
+  document.addEventListener('pointerdown', (e) => {
+    if (!wrapper.contains(e.target)) closeCategorySuggestions();
+  });
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { closeCategorySuggestions(); input.blur(); }
+  });
+}
+
 function initLibrary() {
   $('#searchInput').addEventListener('input', () => { libraryShowAll = false; renderLibrary(); });
   const filterInput = $('#filterCategory');
@@ -2047,6 +2118,7 @@ function initLibrary() {
     wrapper.classList.toggle('has-value', hasValue);
     libraryShowAll = false;
     renderLibrary();
+    openCategorySuggestions();
   });
   clearBtn.addEventListener('click', () => {
     filterInput.value = '';
@@ -2055,7 +2127,9 @@ function initLibrary() {
     libraryShowAll = false;
     filterInput.focus();
     renderLibrary();
+    openCategorySuggestions();
   });
+  initCategorySuggestions();
   $('#libraryShowAllBtn').addEventListener('click', () => {
     libraryShowAll = true;
     renderLibrary();
@@ -2290,18 +2364,15 @@ function updateCategoryDatalist() {
 }
 
 function updateCategoryFilter(activeCards) {
-  const datalist = $('#filterCategoryList');
-  if (!datalist) return;
-
   const allTags = [];
   activeCards.forEach(c => {
     if (c.category) {
       c.category.split(',').forEach(tag => allTags.push(tag.trim()));
     }
   });
-  const categories = [...new Set(allTags)].filter(Boolean).sort();
-
-  datalist.innerHTML = categories.map(cat => `<option value="${escapeHtml(cat)}">`).join('');
+  // 供自訂下拉使用；面板開啟中則同步刷新內容
+  _filterCategories = [...new Set(allTags)].filter(Boolean).sort();
+  if ($('#filterCategoryList')?.style.display === 'block') renderCategorySuggestions();
 }
 
 // ── Modal ──
