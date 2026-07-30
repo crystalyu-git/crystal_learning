@@ -1488,15 +1488,23 @@ select.form-input {
   -webkit-overflow-scrolling: touch;
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
-  background: var(--bg-card);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  /* 必須不透明，否則底下的卡片會透出來看不清楚。
+     --bg-card 帶 alpha 0.6（applyTheme 產生自訂主題時亦然）故不可用；
+     改以不透明的 --bg-primary 打底，再疊一層極淡 glass 與頁面背景區隔。 */
+  background-color: var(--bg-primary);
+  background-image: linear-gradient(var(--bg-glass), var(--bg-glass));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
 }
 
 .filter-suggestion-item {
   padding: 0.55rem 0.85rem;
   cursor: pointer;
   font-size: 0.85rem;
-  color: var(--text-secondary);
+  color: var(--text-primary);
+}
+
+.filter-suggestion-item + .filter-suggestion-item {
+  border-top: 1px solid var(--border-light);
 }
 
 .filter-suggestion-item:active {
