@@ -1752,8 +1752,11 @@ select.form-input {
   transition: all var(--transition-fast);
 }
 
-tr:hover .habit-edit-btn {
-  opacity: 1;
+/* 滑鼠裝置才用 hover 顯示；觸控裝置若靠 hover 才顯示，第一下點擊會被當成 hover 而不觸發 click */
+@media (hover: hover) and (pointer: fine) {
+  tr:hover .habit-edit-btn {
+    opacity: 1;
+  }
 }
 
 .habit-edit-btn:hover {
@@ -1776,8 +1779,18 @@ tr:hover .habit-edit-btn {
   transition: all var(--transition-fast);
 }
 
-tr:hover .habit-delete-btn {
-  opacity: 1;
+@media (hover: hover) and (pointer: fine) {
+  tr:hover .habit-delete-btn {
+    opacity: 1;
+  }
+}
+
+/* 觸控裝置沒有 hover，編輯／刪除按鈕改為常駐顯示（否則永遠點不到） */
+@media (hover: none) {
+  .habit-edit-btn,
+  .habit-delete-btn {
+    opacity: 1;
+  }
 }
 
 .habit-delete-btn:hover {
