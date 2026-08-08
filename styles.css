@@ -189,6 +189,28 @@ body {
   border-radius: var(--radius-md);
   background: var(--bg-glass);
   border: 1px solid var(--border-subtle);
+  transition: transform 0.15s ease, border-color 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* hover 只給滑鼠裝置：觸控環境會把第一下點擊誤判成 hover 而吞掉 click */
+@media (hover: hover) {
+  .brand-icon:hover {
+    border-color: var(--accent-primary);
+  }
+}
+
+.brand-icon:active {
+  transform: scale(0.9);
+}
+
+/* 從資料庫更新中：圖示轉圈 */
+.brand-icon.refreshing svg {
+  animation: brandSpin 0.8s linear infinite;
+}
+
+@keyframes brandSpin {
+  to { transform: rotate(360deg); }
 }
 
 .brand-text {
@@ -2218,6 +2240,19 @@ select.form-input {
   margin-bottom: 1.5rem;
 }
 
+.modal-content p strong {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+/* 二次確認彈窗的補充說明：比主文更小更淡，兩段之間不要被 p 的 margin 拉太開 */
+.modal-content p + .modal-note {
+  margin-top: -0.9rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.55;
+}
+
 .modal-actions {
   display: flex;
   gap: 0.75rem;
@@ -2530,6 +2565,11 @@ select.form-input {
   .settings-actions .modal-btn.sync-now {
     gap: 0.25rem;
   }
+
+  /* 「以本機覆寫雲端」字比原本的「立即同步」長，手機上把圖示收起來讓三顆按鈕還能同一列 */
+  .settings-actions .modal-btn.sync-now svg {
+    display: none;
+  }
 }
 
 .settings-modal .modal-btn.confirm {
@@ -2540,17 +2580,20 @@ select.form-input {
   box-shadow: 0 4px 20px color-mix(in srgb, var(--accent-primary) 40%, transparent);
 }
 
+/* 這顆是「本機覆寫雲端」的破壞性操作，用警示色而不是原本的綠色，避免看起來像安全的同步 */
 .modal-btn.sync-now {
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  background: rgba(34, 197, 94, 0.15);
-  color: #4ade80;
-  border: 1px solid rgba(34, 197, 94, 0.3);
+  background: color-mix(in srgb, var(--accent-warning) 15%, transparent);
+  color: var(--accent-warning);
+  border: 1px solid color-mix(in srgb, var(--accent-warning) 35%, transparent);
 }
 
-.modal-btn.sync-now:hover {
-  background: rgba(34, 197, 94, 0.25);
+@media (hover: hover) {
+  .modal-btn.sync-now:hover {
+    background: color-mix(in srgb, var(--accent-warning) 25%, transparent);
+  }
 }
 
 /* ── Loading Overlay ── */

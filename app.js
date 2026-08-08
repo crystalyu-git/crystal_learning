@@ -18,6 +18,11 @@ let reviewStats = { total: 0, correct: 0, wrong: 0 };
 let deleteTargetId = null;
 let isOnline = false;
 
+// 手動／自動「更新雲端資料」用的狀態
+let isRefreshing = false; // 防止連點時重複打 API
+let lastSyncAt = 0; // 上次成功同步的時間戳，供自動更新節流
+const AUTO_REFRESH_MIN_GAP = 60 * 1000; // 60 秒內切進切出不重複同步
+
 // Habit Tracker
 let habits = []; // [{ id, name, createdAt }]
 let habitChecks = {}; // { [habitId]: { "YYYY-MM-DD": true } }
@@ -354,7 +359,10 @@ async function initApp() {
   // Try to connect to Notion Proxy
   if (getNotionProxyUrl()) {
     await syncFromNotion();
+    lastSyncAt = Date.now(); // 別讓下面的自動更新一開場就再打一次
   }
+
+  initAutoRefresh();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -553,10 +561,56 @@ async function syncFromNotion() {
     if ($('#libraryView') && $('#libraryView').classList.contains('active')) {
       renderLibrary();
     }
+    return true;
   } catch (e) {
     console.warn('Database sync failed:', e);
     updateSyncStatus('error');
+    return false;
   }
+}
+
+// 主動從資料庫拉最新資料並重繪畫面
+// H5 加到主畫面後沒有網址列可以重新整理，靠點左上角 logo 圖示與切回 App 時自動觸發
+async function refreshFromCloud({ silent = false } = {}) {
+  if (isRefreshing) return;
+  // 複習進行中不覆寫：cards 被整包換掉，正在看的那張卡片可能憑空消失
+  if ($('#reviewView') && $('#reviewView').classList.contains('active') &&
+      reviewQueue.length > 0 && currentReviewIndex < reviewQueue.length) {
+    if (!silent) showToast('複習進行中，完成後再更新');
+    return;
+  }
+  isRefreshing = true;
+  const icon = $('.brand-icon');
+  if (icon) icon.classList.add('refreshing');
+  try {
+    const ok = await syncFromNotion();
+    if (ok) {
+      lastSyncAt = Date.now();
+      refreshActiveView();
+    }
+    if (!silent) showToast(ok ? '已更新為最新資料' : '更新失敗，請檢查連線');
+  } finally {
+    isRefreshing = false;
+    if (icon) icon.classList.remove('refreshing');
+  }
+}
+
+// syncFromNotion 只重繪儀表板／習慣追蹤／知識庫，
+// 語言篩選列與分類清單會因為卡片被整包換掉而過期，這裡補繪
+function refreshActiveView() {
+  renderLangFilterBars();
+  updateCategoryDatalist();
+}
+
+function initAutoRefresh() {
+  const maybeRefresh = () => {
+    if (document.visibilityState !== 'visible') return;
+    if (Date.now() - lastSyncAt < AUTO_REFRESH_MIN_GAP) return;
+    refreshFromCloud({ silent: true }); // 背景靜默更新，不跳提示
+  };
+  document.addEventListener('visibilitychange', maybeRefresh);
+  // iOS 主畫面 web app 從背景復原時走 bfcache，visibilitychange 不一定會補發
+  window.addEventListener('pageshow', (e) => { if (e.persisted) maybeRefresh(); });
 }
 
 async function saveCardToNotion(card) {
@@ -1071,6 +1125,12 @@ function initNavigation() {
 
   // 點擊左上角 logo/標題區塊回到預設首頁（知識庫）
   $('.nav-brand').addEventListener('click', () => switchView('library'));
+
+  // 點 logo 圖示＝主動從資料庫拉最新資料（H5 加到主畫面沒有重新整理鈕）
+  $('.brand-icon').addEventListener('click', (e) => {
+    e.stopPropagation(); // 不要冒泡上去觸發 .nav-brand 的切頁
+    refreshFromCloud();
+  });
 
   // Quick actions
   $('#quickReview').addEventListener('click', () => switchView('review'));
@@ -2651,20 +2711,39 @@ function initSettings() {
     showToast('設定已儲存');
   });
 
-  // Sync now
-  $('#syncNowBtn').addEventListener('click', async () => {
+  // 以本機覆寫雲端：單向上傳、會蓋掉雲端現有內容，先跳二次確認
+  const overwriteModal = $('#overwriteCloudModal');
+
+  $('#syncNowBtn').addEventListener('click', () => {
     modal.classList.remove('active');
-    showLoading('正在同步資料到 Database...');
+    $('#overwriteCardCount').textContent = cards.length;
+    overwriteModal.classList.add('active');
+  });
+
+  // 取消就退回設定，不要讓使用者莫名回到主畫面
+  const cancelOverwrite = () => {
+    overwriteModal.classList.remove('active');
+    modal.classList.add('active');
+  };
+  $('#cancelOverwriteCloud').addEventListener('click', cancelOverwrite);
+  overwriteModal.addEventListener('click', (e) => {
+    if (e.target === overwriteModal) cancelOverwrite();
+  });
+
+  $('#confirmOverwriteCloud').addEventListener('click', async () => {
+    overwriteModal.classList.remove('active');
+    showLoading('正在用本機資料覆寫雲端...');
 
     try {
       updateSyncStatus('syncing');
       await NotionAPI.syncAll(cards);
       updateSyncStatus('connected');
-      showToast(`已成功同步 ${cards.length} 張卡片到 Notion`);
+      lastSyncAt = Date.now(); // 剛推完，雲端就是本機，不必馬上再拉一次
+      showToast(`已用本機 ${cards.length} 張卡片覆寫雲端`);
     } catch (e) {
-      console.error('Sync failed:', e);
+      console.error('Overwrite cloud failed:', e);
       updateSyncStatus('error');
-      showToast('同步失敗，請檢查連線');
+      showToast('覆寫失敗，請檢查連線');
     } finally {
       hideLoading();
     }
