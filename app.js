@@ -613,16 +613,19 @@ function initAutoRefresh() {
   window.addEventListener('pageshow', (e) => { if (e.persisted) maybeRefresh(); });
 }
 
-async function saveCardToNotion(card) {
-  if (!getNotionProxyUrl()) return;
+// silent: 由呼叫端自己顯示錯誤訊息時用，避免跳出兩則提示
+async function saveCardToNotion(card, { silent = false } = {}) {
+  if (!getNotionProxyUrl()) return true; // 沒設後端就沒有雲端可失敗
   try {
     updateSyncStatus('syncing');
     await NotionAPI.saveCard(card);
     updateSyncStatus('connected');
+    return true;
   } catch (e) {
     console.warn('Save to Database failed:', e);
     updateSyncStatus('error');
-    showToast('儲存失敗: ' + (e.message || String(e)).substring(0, 50));
+    if (!silent) showToast('儲存失敗: ' + (e.message || String(e)).substring(0, 50));
+    return false;
   }
 }
 
@@ -1159,7 +1162,7 @@ function switchView(viewName) {
   if (viewName === 'dashboard') updateDashboard();
   if (viewName === 'review') startReviewSession();
   if (viewName === 'library') renderLibrary();
-  if (viewName === 'habit') renderHabitTracker();
+  if (viewName === 'habit') renderHabitTracker({ anchorToday: true });
 }
 
 // ── Date Display ──
@@ -1454,18 +1457,22 @@ function toggleCardCheck(cardId) {
   if ($('#habitView')?.classList.contains('active')) renderHabitTracker();
 }
 
+// 回傳是否真的捲成功。頁面還隱藏著（.view 沒有 active）時整張表量不到位置，
+// offsetLeft 全是 0、scrollLeft 也吃不進去，這種情況要回報失敗讓呼叫端之後再試一次
 function scrollHabitTrackerToToday() {
   const container = $('#habitTrackerScroll');
   const table = $('#habitTrackerTable');
-  if (!container || !table) return;
+  if (!container || !table) return false;
+  if (!container.clientWidth) return false;
   const todayCell = table.querySelector('.habit-day-col.is-today');
   const nameCol = table.querySelector('.habit-name-col');
   if (!todayCell) {
     container.scrollLeft = container.scrollWidth;
-    return;
+    return true;
   }
   const nameWidth = nameCol ? nameCol.offsetWidth : 0;
   container.scrollLeft = Math.max(0, todayCell.offsetLeft - nameWidth);
+  return true;
 }
 
 // 渲染打卡表的月份列與日期列（習慣追蹤與卡片打卡紀錄共用）
@@ -1573,7 +1580,8 @@ function applyEllipsisTitles(scope) {
   });
 }
 
-function renderHabitTracker() {
+// anchorToday：切進習慣追蹤頁時強制定錨回今天；其餘情況（打卡、背景同步重繪）保留使用者原本捲到的位置
+function renderHabitTracker({ anchorToday = false } = {}) {
   const monthRow = $('#habitMonthRow');
   const dayRow = $('#habitDayRow');
   const body = $('#habitTrackerBody');
@@ -1627,9 +1635,16 @@ function renderHabitTracker() {
     </tr>`;
   }).join('');
 
-  if (!habitScrollInitialized) {
-    scrollHabitTrackerToToday();
-    habitScrollInitialized = true;
+  if (anchorToday || !habitScrollInitialized) {
+    // 讀 clientWidth／offsetLeft 會強制 reflow，切進本頁時同步呼叫就量得到，多數情況這裡就成功；
+    // 真的量不到（頁面還隱藏著）再等下一幀補一次。不能只靠 rAF——分頁在背景時它根本不會觸發
+    if (scrollHabitTrackerToToday()) {
+      habitScrollInitialized = true;
+    } else {
+      requestAnimationFrame(() => {
+        if (scrollHabitTrackerToToday()) habitScrollInitialized = true;
+      });
+    }
   } else {
     container.scrollLeft = prevScrollLeft;
   }
@@ -1720,6 +1735,8 @@ function initHabitTracker() {
 function initAddForm() {
   $('#addForm').addEventListener('submit', async (e) => {
     e.preventDefault();
+    // 送出中就擋掉：按鈕雖然已 disabled，但在輸入框按 Enter 仍可能觸發 submit
+    if (_isAddingCard) return;
 
     // Flush any lingering tag text before saving
     if ($('#addTagInput') && $('#addTagInput').value.trim()) {
@@ -1761,39 +1778,61 @@ function initAddForm() {
       createdAt: Date.now(),
       reviewCount: 0,
     };
-    _addImageUrl = ''; // reset after use
-
     cards.push(newCard);
     saveCardsToLocal();
 
-    // Reset form
-    $('#addForm').reset();
-    // Restore last-used language (form reset reverts to HTML default)
-    const lastLang = localStorage.getItem('crystal_last_lang');
-    if (lastLang && $('#inputLang')) {
-      setLangValue('inputLang', lastLang);
-    }
-    // Also clear status texts
-    const addStatus = $('#addAudioStatus');
-    if (addStatus) { addStatus.style.display = 'none'; addStatus.textContent = ''; }
-
-    const translateStatus = $('#translateStatus');
-    if (translateStatus) { translateStatus.style.display = 'none'; translateStatus.textContent = ''; }
-    const imgStatus = $('#meaningImageStatus');
-    if (imgStatus) { imgStatus.style.display = 'none'; imgStatus.textContent = ''; }
-    _addImageUrl = '';
-    _addTagInput?.setTags('');
-    $('#inputWord').focus();
-    updateCategoryDatalist();
-
-    // Show toast
-    showToast(`「${word}」已成功加入知識庫！`);
+    // 存雲端成功才清表單。之前是先清再送，一旦上傳失敗使用者剛打的內容就沒了，只能整張重打
+    setAddFormBusy(true);
 
     // Decouple network request from form submit lifecycle to prevent iOS Safari cancellation
-    setTimeout(() => {
-      saveCardToNotion(newCard);
+    setTimeout(async () => {
+      const ok = await saveCardToNotion(newCard, { silent: true });
+      setAddFormBusy(false);
+
+      if (!ok) {
+        // 把剛剛樂觀寫入的本地卡片撤掉：表單內容還在，使用者重按就好，不會變成兩張
+        // （本地留著也沒用，下次開 App 同步時會被雲端整包覆寫掉）
+        cards = cards.filter(c => c.id !== newCard.id);
+        saveCardsToLocal();
+        showToast('儲存失敗，內容已保留，請確認連線後再送出一次');
+        return;
+      }
+
+      clearAddForm();
+      updateCategoryDatalist();
+      showToast(`「${word}」已成功加入知識庫！`);
     }, 100);
   });
+}
+
+// 送出期間鎖住按鈕，避免使用者以為沒反應而重複點擊送出兩張
+function setAddFormBusy(busy) {
+  _isAddingCard = busy;
+  const btn = $('#submitBtn');
+  if (!btn) return;
+  btn.disabled = busy;
+  const label = $('#submitBtnText');
+  if (label) label.textContent = busy ? '儲存中...' : '加入知識庫';
+}
+
+function clearAddForm() {
+  $('#addForm').reset();
+  // Restore last-used language (form reset reverts to HTML default)
+  const lastLang = localStorage.getItem('crystal_last_lang');
+  if (lastLang && $('#inputLang')) {
+    setLangValue('inputLang', lastLang);
+  }
+  // Also clear status texts
+  const addStatus = $('#addAudioStatus');
+  if (addStatus) { addStatus.style.display = 'none'; addStatus.textContent = ''; }
+
+  const translateStatus = $('#translateStatus');
+  if (translateStatus) { translateStatus.style.display = 'none'; translateStatus.textContent = ''; }
+  const imgStatus = $('#meaningImageStatus');
+  if (imgStatus) { imgStatus.style.display = 'none'; imgStatus.textContent = ''; }
+  _addImageUrl = '';
+  _addTagInput?.setTags('');
+  $('#inputWord').focus();
 }
 
 function showToast(message) {
@@ -3571,6 +3610,7 @@ function initTagInput(textInputEl, chipRowEl, hiddenEl, suggestionsEl) {
 }
 
 let _addImageUrl = ''; // temp storage for pending image URL in Add form
+let _isAddingCard = false; // 新增卡片送出中，擋重複送出
 let _editImageUrl = ''; // temp storage for pending image URL in Edit modal
 let _addTagInput = null;
 let _editTagInput = null;

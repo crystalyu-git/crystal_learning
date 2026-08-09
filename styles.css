@@ -729,6 +729,17 @@ select.form-input {
   transform: translateY(0);
 }
 
+/* 存雲端期間：按鈕鎖住，別再吃 hover 的浮起效果，看起來才像真的不能按 */
+.submit-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.submit-btn:disabled:hover {
+  transform: none;
+  box-shadow: none;
+}
+
 /* ── Tag Input ── */
 .tag-input-wrapper {
   display: flex;
