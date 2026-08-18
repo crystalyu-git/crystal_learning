@@ -13,7 +13,7 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;700&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=1.62">
+    <link rel="stylesheet" href="styles.css?v=1.63">
     <!-- 主題早期初始化：防止 Safari 快取舊 app.js 導致閃白 -->
     <script>
     (function() {
@@ -121,7 +121,7 @@
                     <path d="M12 3a6 6 0 0 0-3.6 10.8c.5.4.8.9.9 1.5l.2 1.2h5l.2-1.2c.1-.6.4-1.1.9-1.5A6 6 0 0 0 12 3z" />
                     <line x1="10" y1="20" x2="14" y2="20" />
                 </svg>
-                <span>新視角</span>
+                <span>集合A｜非A</span>
             </button>
             <div class="nav-divider"></div>
 
@@ -757,14 +757,14 @@
         <section class="view" id="beliefView">
             <div class="view-header">
                 <div>
-                    <h1 class="view-title">新視角
+                    <h1 class="view-title">集合A｜非A
                         <svg class="heading-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M12 3a6 6 0 0 0-3.6 10.8c.5.4.8.9.9 1.5l.2 1.2h5l.2-1.2c.1-.6.4-1.1.9-1.5A6 6 0 0 0 12 3z" />
                             <line x1="10" y1="20" x2="14" y2="20" />
                         </svg>
                     </h1>
-                    <p class="view-subtitle">寫下當下的心念，之後回頭補上新的視角</p>
+                    <p class="view-subtitle">寫下當下的集合A，之後回頭補上非A</p>
                 </div>
             </div>
 
@@ -791,11 +791,11 @@
             <div id="beliefContent" style="display:none">
                 <p class="belief-decrypt-warn" id="beliefDecryptWarn" style="display:none"></p>
                 <div class="belief-toolbar">
-                    <input type="text" id="beliefSearch" class="form-input" placeholder="搜尋心念或新視角內容..."
+                    <input type="text" id="beliefSearch" class="form-input" placeholder="搜尋集合A或非A內容..."
                         autocomplete="off">
                     <div class="belief-filter-chips">
                         <button type="button" class="belief-chip active" data-filter="all">全部</button>
-                        <button type="button" class="belief-chip" data-filter="pending">尚無新視角</button>
+                        <button type="button" class="belief-chip" data-filter="pending">待補非A</button>
                     </div>
                     <button type="button" id="addBeliefBtn" class="habit-add-btn">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -803,12 +803,12 @@
                             <line x1="12" y1="5" x2="12" y2="19" />
                             <line x1="5" y1="12" x2="19" y2="12" />
                         </svg>
-                        新增心念
+                        新增集合A
                     </button>
                 </div>
                 <div id="beliefList" class="belief-list"></div>
                 <div class="empty-state small" id="emptyBelief" style="display:none">
-                    <p>還沒有任何紀錄，從習慣追蹤點日期或按上方「新增心念」開始。</p>
+                    <p>還沒有任何紀錄，從習慣追蹤點日期或按上方「新增集合A」開始。</p>
                 </div>
             </div>
         </section>
@@ -1144,7 +1144,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <script src="https://unpkg.com/wanakana@5.3.1/wanakana.min.js"></script>
-    <script src="app.js?v=1.62"></script>
+    <script src="app.js?v=1.63"></script>
 
     <!-- OCR Result Overlay -->
     <div id="ocrOverlay"

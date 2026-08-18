@@ -1776,7 +1776,7 @@ select.form-input {
   border-radius: 2px;
 }
 
-/* 可點開心念日記的日期。多留一點下方空間給圓點，避免和 is-today 的底線疊在一起 */
+/* 可點開集合A／非A 日記的日期。多留一點下方空間給圓點，避免和 is-today 的底線疊在一起 */
 .habit-day-col.is-clickable {
   position: relative;
   cursor: pointer;
@@ -1796,7 +1796,7 @@ select.form-input {
   border-radius: var(--radius-sm);
 }
 
-/* 這天寫過心念 —— 用 ::before，::after 已經被 is-today 的底線佔走 */
+/* 這天寫過集合A —— 用 ::before，::after 已經被 is-today 的底線佔走 */
 .habit-day-col.has-belief::before {
   content: '';
   position: absolute;
@@ -3085,7 +3085,7 @@ select.form-input {
 .habit-check-cell.readonly.checked:hover .habit-check-dot {
   border-color: var(--accent-primary);
 }
-/* ── 心念日記（新視角）── */
+/* ── 集合A／非A 日記── */
 
 /* 解鎖面板 */
 .belief-lock {
@@ -3198,7 +3198,7 @@ select.form-input {
   border-radius: var(--radius-md);
 }
 
-/* 還沒找到新視角的用警示色左邊條，掃過清單時一眼看得出哪些還卡著 */
+/* 還沒寫下非A的用警示色左邊條，掃過清單時一眼看得出哪些還卡著 */
 .belief-item.pending {
   border-left-color: color-mix(in srgb, var(--accent-warning) 65%, transparent);
 }

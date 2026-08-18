@@ -30,7 +30,7 @@ let cardChecks = {}; // { [cardId]: { "YYYY-MM-DD": true } } — 知識庫卡片
 let habitScrollInitialized = false;
 const HABIT_MAX_MONTHS_BACK = 11; // 打卡表最多回溯 11 個月，避免表格無限成長
 
-// 心念日記（新視角）：內容一律加密後才落地，beliefs 是解密後的明文，只存在記憶體
+// 集合A／非A 日記：內容一律加密後才落地，beliefs 是解密後的明文，只存在記憶體
 let beliefs = []; // [{ id, date: "YYYY-MM-DD", belief, reframe, createdAt, updatedAt }]
 let beliefLocked = true; // 尚未解鎖時為 true，此時不可寫入，避免用空資料覆寫掉密文
 
@@ -378,7 +378,7 @@ async function initApp() {
   initSmartInput();
   updateDateDisplay();
 
-  // 心念日記：這台裝置存過密碼就自動解鎖，解不開也只是維持鎖定，不影響其他功能
+  // 集合A／非A 日記：這台裝置存過密碼就自動解鎖，解不開也只是維持鎖定，不影響其他功能
   await tryAutoUnlockBeliefs();
 
   // Apply language context to start
@@ -562,7 +562,7 @@ async function syncFromNotion() {
         pushHabitsToNotion();
       }
 
-      // ── 心念日記（逐月比對，未解鎖時只取回金鑰卡片、不動本機密文）──
+      // ── 集合A／非A 日記（逐月比對，未解鎖時只取回金鑰卡片、不動本機密文）──
       await mergeBeliefsFromCloud(notionCards);
 
       // ── 以資料庫為主（Source of Truth）全數覆寫本地端 ──
@@ -733,7 +733,7 @@ function hideLoading() {
 
 const STREAK_CARD_ID = '__crystal_streak__';
 
-// 隱藏的中繼卡片（連續天數、習慣打卡、心念日記）借用同一張字庫表存放，
+// 隱藏的中繼卡片（連續天數、習慣打卡、集合A／非A 日記）借用同一張字庫表存放，
 // 但不是單字卡。任何會顯示或複習卡片的地方都必須先濾掉，否則會混進知識庫
 function isMetaCard(c) {
   const id = String(c && c.id || '');
@@ -795,9 +795,9 @@ function pushHabitsToNotion() {
 }
 
 /* ─────────────────────────────────────────────
-   心念日記（新視角）
+   集合A／非A 日記
    ─────────────────────────────────────────────
-   這個 repo 是公開的、後端部署又必須是 "Anyone"，所以心念內容一律在瀏覽器端
+   這個 repo 是公開的、後端部署又必須是 "Anyone"，所以集合A內容一律在瀏覽器端
    加密後才落地（本機 localStorage 與雲端 Sheet 存的都是密文）。密碼只存在使用者
    自己的裝置，程式碼與後端都拿不到，也就沒有任何還原的後門——密碼忘記等於資料永久遺失。
    ───────────────────────────────────────────── */
@@ -940,7 +940,7 @@ async function pullBeliefsAfterUnlock() {
     const notionCards = await NotionAPI.loadAll();
     if (notionCards) await mergeBeliefsFromCloud(notionCards);
   } catch (e) {
-    console.warn('解鎖後拉取雲端心念失敗:', e);
+    console.warn('解鎖後拉取雲端集合A失敗:', e);
   }
 }
 
@@ -979,7 +979,7 @@ async function loadBeliefsFromLocal() {
   const json = await decryptBelief(raw);
   if (json === null) {
     // 解不開就維持鎖定，絕不用空陣列覆寫掉還在的密文
-    console.warn('本機心念資料解密失敗，保留密文');
+    console.warn('本機集合A資料解密失敗，保留密文');
     beliefLocked = true;
     beliefKey = null;
     return;
@@ -1062,7 +1062,7 @@ function pushBeliefsToNotion(monthKeys = null) {
   }, 600);
 }
 
-// 從同步結果中取出心念資料。未解鎖時什麼都不做——本機的密文原封不動留著
+// 從同步結果中取出集合A資料。未解鎖時什麼都不做——本機的密文原封不動留著
 async function mergeBeliefsFromCloud(notionCards) {
   // 金鑰卡片先處理：換裝置時本機還沒有 salt，要靠它才解得開
   const keyCard = notionCards.find(c => c.id === BELIEF_KEY_CARD_ID);
@@ -1094,7 +1094,7 @@ async function mergeBeliefsFromCloud(notionCards) {
       const json = await decryptBelief(card.meaning);
       if (json === null) {
         // 解不開（多半是密碼與這批資料不同）——保留本機、不覆寫，也不回推蓋掉雲端
-        console.warn('雲端心念資料解密失敗：', month);
+        console.warn('雲端集合A資料解密失敗：', month);
         if (!beliefUndecryptable.includes(month)) beliefUndecryptable.push(month);
         continue;
       }
@@ -1894,7 +1894,7 @@ function scrollHabitTrackerToToday() {
 }
 
 // 渲染打卡表的月份列與日期列（習慣追蹤與卡片打卡紀錄共用）
-// clickableDays：只有習慣追蹤頁的日期可以點開心念日記，卡片打卡紀錄那張是唯讀的
+// clickableDays：只有習慣追蹤頁的日期可以點開集合A／非A 日記，卡片打卡紀錄那張是唯讀的
 function renderTrackerHead(monthRow, dayRow, cols, today, nameLabel, clickableDays = false) {
   const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
 
@@ -1934,7 +1934,7 @@ function renderTrackerHead(monthRow, dayRow, cols, today, nameLabel, clickableDa
       // 已解鎖才標記圓點：鎖著的時候 beliefs 是空的，畫出來會誤導成「這天沒寫過」
       const hasBelief = !beliefLocked && dateHasBelief(key);
       if (hasBelief) cls.push('has-belief');
-      attrs = `title="${d.getMonth() + 1}/${d.getDate()}（${weekdays[d.getDay()]}）· 點擊記錄心念"`
+      attrs = `title="${d.getMonth() + 1}/${d.getDate()}（${weekdays[d.getDay()]}）· 點擊記錄集合A"`
         + ` data-date="${key}" role="button" tabindex="0"`;
     }
     dayHtml += `<th class="${cls.join(' ')}" ${attrs}>${d.getDate()}</th>`;
@@ -2158,7 +2158,7 @@ function initHabitTracker() {
     if (nameEl) startHabitRename(nameEl.dataset.habitId, nameEl);
   });
 
-  // 點日期開心念日記。拖曳誤觸不必另外擋：initHabitDragScroll 的 click 抑制
+  // 點日期開集合A／非A 日記。拖曳誤觸不必另外擋：initHabitDragScroll 的 click 抑制
   // 綁在外層 #habitTrackerScroll 且是 capture 階段，thead 也在它裡面
   const dayRow = $('#habitDayRow');
   dayRow.addEventListener('click', (e) => {
@@ -2177,28 +2177,28 @@ function initHabitTracker() {
   initHabitDragScroll($('#habitTrackerScroll'));
 }
 
-/* ── 心念日記 UI ── */
+/* ── 集合A／非A 日記 UI ── */
 
 let beliefFilter = 'all'; // 'all' | 'pending'
-let beliefEditingId = null; // 正在編輯的心念 id，null 代表新增
+let beliefEditingId = null; // 正在編輯的集合A id，null 代表新增
 
 function formatBeliefDate(dateKey) {
   const [y, m, d] = String(dateKey).split('-').map(Number);
   return `${y}年${m}月${d}日`;
 }
 
-// 心念與新視角都可能是好幾段，換行要留著才讀得下去
+// 集合A 與非A 都可能是好幾段，換行要留著才讀得下去
 function beliefTextHtml(text) {
   return escapeHtml(text).replace(/\n/g, '<br>');
 }
 
-// 一則心念的顯示卡（彈窗與分頁共用）
+// 一則集合A的顯示卡（彈窗與分頁共用）
 function beliefItemHtml(item, { showDate = false } = {}) {
   const pending = !item.reframe;
   return `<div class="belief-item${pending ? ' pending' : ''}" data-belief-id="${item.id}">
     <div class="belief-item-head">
       ${showDate ? `<span class="belief-item-date">${formatBeliefDate(item.date)}</span>` : ''}
-      ${pending ? '<span class="belief-badge">尚無新視角</span>' : ''}
+      ${pending ? '<span class="belief-badge">待補非A</span>' : ''}
       <div class="belief-item-actions">
         <button type="button" class="belief-edit-btn" data-belief-id="${item.id}" aria-label="編輯">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -2209,12 +2209,12 @@ function beliefItemHtml(item, { showDate = false } = {}) {
       </div>
     </div>
     <div class="belief-field">
-      <span class="belief-field-label">心念</span>
+      <span class="belief-field-label">集合A</span>
       <div class="belief-field-text">${beliefTextHtml(item.belief)}</div>
     </div>
     <div class="belief-field">
-      <span class="belief-field-label">我該如何換個新視角</span>
-      <div class="belief-field-text${pending ? ' placeholder' : ''}">${pending ? '尚未找到新視角，之後想通了再回來補上' : beliefTextHtml(item.reframe)}</div>
+      <span class="belief-field-label">非A</span>
+      <div class="belief-field-text${pending ? ' placeholder' : ''}">${pending ? '尚未寫下非A，之後想通了再回來補上' : beliefTextHtml(item.reframe)}</div>
     </div>
   </div>`;
 }
@@ -2222,10 +2222,10 @@ function beliefItemHtml(item, { showDate = false } = {}) {
 // 新增／編輯共用的表單
 function beliefFormHtml(item, dateKey) {
   return `<form class="belief-form" data-date="${dateKey}" data-belief-id="${item ? item.id : ''}">
-    <label class="form-label" for="beliefInput">心念</label>
+    <label class="form-label" for="beliefInput">集合A</label>
     <textarea class="form-input belief-textarea" id="beliefInput" rows="3"
       placeholder="此刻腦中盤旋的念頭是什麼？" required>${item ? escapeHtml(item.belief) : ''}</textarea>
-    <label class="form-label" for="reframeInput" style="margin-top:0.75rem">我該如何換個新視角<span class="belief-optional">（可留白，之後補）</span></label>
+    <label class="form-label" for="reframeInput" style="margin-top:0.75rem">非A<span class="belief-optional">（可留白，之後補）</span></label>
     <textarea class="form-input belief-textarea" id="reframeInput" rows="3"
       placeholder="換個角度看，還可以怎麼理解這件事？">${item ? escapeHtml(item.reframe) : ''}</textarea>
     <div class="belief-form-actions">
@@ -2246,7 +2246,7 @@ function openBeliefModal(dateKey) {
   }
   const modal = $('#beliefModal');
   modal.dataset.date = dateKey;
-  $('#beliefModalTitle').textContent = `${formatBeliefDate(dateKey)} · 心念`;
+  $('#beliefModalTitle').textContent = `${formatBeliefDate(dateKey)} · 集合A`;
   beliefEditingId = null;
   renderBeliefModalBody();
   modal.classList.add('active');
@@ -2278,7 +2278,7 @@ function renderBeliefModalBody({ showForm = false } = {}) {
   } else if (!beliefEditingId) {
     html += `<button type="button" class="belief-add-inline" id="beliefAddInline">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-      新增心念
+      新增集合A
     </button>`;
   }
 
@@ -2317,7 +2317,7 @@ function renderBeliefView() {
     $('#beliefLockTitle').textContent = existing ? '輸入加密密碼' : '設定加密密碼';
     $('#beliefLockDesc').textContent = existing
       ? '這台裝置還沒解鎖過。輸入你當初設定的密碼即可讀取內容。'
-      : '心念內容會在這台裝置上加密後才儲存與上傳，雲端看到的是一串亂碼。';
+      : '所有內容會在這台裝置上加密後才儲存與上傳，雲端看到的是一串亂碼。';
     $('#beliefLockWarn').textContent = existing
       ? ''
       : '密碼只存在你自己的裝置，沒有任何還原後門——忘記就再也解不開了。';
@@ -2359,7 +2359,7 @@ function renderBeliefView() {
   const listEl = $('#beliefList');
   emptyEl.style.display = list.length === 0 ? '' : 'none';
   emptyEl.querySelector('p').textContent = beliefs.length === 0
-    ? '還沒有任何紀錄，從習慣追蹤點日期或按上方「新增心念」開始。'
+    ? '還沒有任何紀錄，從習慣追蹤點日期或按上方「新增集合A」開始。'
     : '沒有符合條件的紀錄。';
 
   // 依日期分組
@@ -2440,7 +2440,7 @@ function initBelief() {
     });
   });
 
-  // 分頁的「新增心念」預設寫今天
+  // 分頁的「新增集合A」預設寫今天
   $('#addBeliefBtn').addEventListener('click', () => openBeliefModal(habitDateKey(getToday())));
 
   // ── 彈窗 ──
@@ -2480,7 +2480,7 @@ function initBelief() {
         const item = beliefs.find(b => b.id === delBtn.dataset.beliefId);
         if (!item) return;
         const preview = item.belief.length > 20 ? item.belief.slice(0, 20) + '…' : item.belief;
-        if (!confirm(`確定要刪除這則心念嗎？此操作無法復原。\n\n「${preview}」`)) return;
+        if (!confirm(`確定要刪除這筆紀錄嗎？此操作無法復原。\n\n「${preview}」`)) return;
         await deleteBelief(delBtn.dataset.beliefId);
         beliefEditingId = null;
         isModal ? renderBeliefModalBody() : renderBeliefView();
