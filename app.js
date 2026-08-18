@@ -578,6 +578,7 @@ async function syncFromNotion() {
       pushBeliefKeyCard();
       pushBeliefsToNotion();
     }
+    beliefCloudChecked = true; // 這輪已看過雲端有無金鑰卡片，解鎖畫面才敢放行建立
     updateSyncStatus('connected');
     updateDashboard();
     renderHabitTracker();
@@ -813,6 +814,12 @@ const PBKDF2_ITERATIONS = 150000;
 
 let beliefKey = null; // 解鎖後快取的 CryptoKey，只存在記憶體
 let beliefPushTimer = null;
+// 是否已經跟雲端確認過「有沒有既存的金鑰卡片」。在確認之前絕不能讓使用者建立新金鑰庫：
+// 建立會產生新的 salt 並覆寫雲端的 __crystal_belief_key__，舊的月卡片就永遠解不開了
+let beliefCloudChecked = false;
+// 雲端有月卡片卻解不開的月份。這代表金鑰對不上（多半是某台裝置重新建過金鑰庫），
+// 一定要讓使用者看見——否則「解不開」和「本來就沒寫過」在畫面上長得一模一樣
+let beliefUndecryptable = [];
 
 // ── base64 ⇄ bytes ──
 function bytesToB64(bytes) {
@@ -920,7 +927,21 @@ async function unlockBeliefs(passphrase) {
   beliefKey = key;
   beliefLocked = false;
   await loadBeliefsFromLocal();
+  await pullBeliefsAfterUnlock();
   return true;
+}
+
+// 解鎖當下一定要把雲端那份拉下來解密。換裝置時本機是空的，而同步是在解鎖「之前」
+// 跑的、當時沒有金鑰只能跳過月卡片；若不補這一步，使用者解鎖後會看到空白，
+// 更糟的是接著新增一則就會用這份空資料覆寫掉雲端整個月，等於刪掉另一台的紀錄
+async function pullBeliefsAfterUnlock() {
+  if (!getNotionProxyUrl() || !beliefKey) return;
+  try {
+    const notionCards = await NotionAPI.loadAll();
+    if (notionCards) await mergeBeliefsFromCloud(notionCards);
+  } catch (e) {
+    console.warn('解鎖後拉取雲端心念失敗:', e);
+  }
 }
 
 // 開 App 時用已存的密碼自動解鎖
@@ -1074,8 +1095,10 @@ async function mergeBeliefsFromCloud(notionCards) {
       if (json === null) {
         // 解不開（多半是密碼與這批資料不同）——保留本機、不覆寫，也不回推蓋掉雲端
         console.warn('雲端心念資料解密失敗：', month);
+        if (!beliefUndecryptable.includes(month)) beliefUndecryptable.push(month);
         continue;
       }
+      beliefUndecryptable = beliefUndecryptable.filter(m => m !== month);
       try {
         const items = JSON.parse(json) || [];
         beliefs = beliefs.filter(b => beliefMonthKey(b.date) !== month).concat(items);
@@ -2275,6 +2298,22 @@ function renderBeliefView() {
     lockPanel.style.display = '';
     content.style.display = 'none';
     const existing = hasBeliefVault();
+
+    // 設了後端卻還沒同步成功時，無從得知雲端是否已有金鑰庫。此時若讓使用者
+    // 「設定密碼」，會覆寫掉雲端金鑰卡片而使另一台裝置的內容永遠解不開，
+    // 所以寧可擋著要求先連上線——只有純本機使用（沒設後端）才直接放行
+    const mustWaitForCloud = !existing && !!getNotionProxyUrl() && !beliefCloudChecked;
+    if (mustWaitForCloud) {
+      $('#beliefLockTitle').textContent = '正在確認雲端資料';
+      $('#beliefLockDesc').textContent = '還沒和雲端確認過是否已有加密日記。先確認再設定密碼，才不會覆蓋掉其他裝置的內容。';
+      $('#beliefLockWarn').textContent = '若一直停在這裡，請到設定頁確認後端網址與存取密鑰。';
+      $('#beliefPassInput').style.display = 'none';
+      $('#beliefPassConfirm').style.display = 'none';
+      $('#beliefUnlockBtn').textContent = '重新確認';
+      return;
+    }
+
+    $('#beliefPassInput').style.display = '';
     $('#beliefLockTitle').textContent = existing ? '輸入加密密碼' : '設定加密密碼';
     $('#beliefLockDesc').textContent = existing
       ? '這台裝置還沒解鎖過。輸入你當初設定的密碼即可讀取內容。'
@@ -2291,6 +2330,18 @@ function renderBeliefView() {
 
   lockPanel.style.display = 'none';
   content.style.display = '';
+
+  // 雲端有資料卻解不開時一定要講明白，並且明確告知「原始密文還在、沒有被刪掉」，
+  // 否則使用者只會看到空白而以為紀錄不見了，進而做出更糟的補救動作
+  const warnEl = $('#beliefDecryptWarn');
+  if (beliefUndecryptable.length) {
+    warnEl.style.display = '';
+    warnEl.textContent = `雲端有 ${beliefUndecryptable.length} 個月份（${beliefUndecryptable.join('、')}）無法用目前的密碼解開，`
+      + '通常是某台裝置重新設定過加密密碼。這些內容仍完整保存在雲端、沒有被刪除，'
+      + '請先不要在這台裝置新增或編輯，避免覆寫掉它們。';
+  } else {
+    warnEl.style.display = 'none';
+  }
 
   const term = ($('#beliefSearch').value || '').toLowerCase().trim();
   let list = [...beliefs];
@@ -2329,8 +2380,18 @@ function renderBeliefView() {
 function initBelief() {
   // ── 解鎖面板 ──
   const doUnlock = async () => {
-    const pass = $('#beliefPassInput').value;
     const warn = $('#beliefLockWarn');
+
+    // 還沒跟雲端確認過就先去確認，確認完重繪讓使用者接著輸入密碼
+    if (!hasBeliefVault() && getNotionProxyUrl() && !beliefCloudChecked) {
+      warn.textContent = '確認中...';
+      const ok = await syncFromNotion();
+      warn.textContent = ok ? '' : '仍然連不上雲端，請到設定頁按「測試連線」確認網址與密鑰。';
+      renderBeliefView();
+      return;
+    }
+
+    const pass = $('#beliefPassInput').value;
     if (!pass) return;
 
     if (!hasBeliefVault()) {

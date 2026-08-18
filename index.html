@@ -13,7 +13,7 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;700&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=1.61">
+    <link rel="stylesheet" href="styles.css?v=1.62">
     <!-- 主題早期初始化：防止 Safari 快取舊 app.js 導致閃白 -->
     <script>
     (function() {
@@ -789,6 +789,7 @@
 
             <!-- 解鎖後的內容 -->
             <div id="beliefContent" style="display:none">
+                <p class="belief-decrypt-warn" id="beliefDecryptWarn" style="display:none"></p>
                 <div class="belief-toolbar">
                     <input type="text" id="beliefSearch" class="form-input" placeholder="搜尋心念或新視角內容..."
                         autocomplete="off">
@@ -1143,7 +1144,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <script src="https://unpkg.com/wanakana@5.3.1/wanakana.min.js"></script>
-    <script src="app.js?v=1.61"></script>
+    <script src="app.js?v=1.62"></script>
 
     <!-- OCR Result Overlay -->
     <div id="ocrOverlay"

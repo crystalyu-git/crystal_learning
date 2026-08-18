@@ -3389,3 +3389,16 @@ select.form-input {
     width: 94%;
   }
 }
+
+/* 雲端資料解不開時的警告。用 danger 色而非一般提示色——這代表可能有內容讀不到，
+   而且使用者接下來的操作有覆寫風險，不能讓它看起來像可以忽略的提示 */
+.belief-decrypt-warn {
+  padding: 0.85rem 1rem;
+  margin-bottom: 1rem;
+  border: 1px solid color-mix(in srgb, var(--accent-danger) 45%, transparent);
+  background: color-mix(in srgb, var(--accent-danger) 12%, transparent);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 0.82rem;
+  line-height: 1.65;
+}
