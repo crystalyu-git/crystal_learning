@@ -61,9 +61,25 @@ function doOptions(e) {
         .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
+// 驗證來自 App 的請求。部署必須是 "Anyone"（前端是靜態頁，無法做 Google OAuth），
+// 網址等同公開端點，真正的防線是這組密鑰
+function checkAppSecret(token) {
+    const expected = PropertiesService.getScriptProperties().getProperty('APP_SECRET');
+    if (!expected) return false; // 沒設定就一律拒絕，避免忘了設而全開
+    return token === expected;
+}
+
+function unauthorizedResponse() {
+    return jsonResponse({ success: false, error: 'Unauthorized', code: 401 });
+}
+
 // 處理 GET 請求 — 讀取所有卡片；action=getAudio 時改回傳單一音檔的 base64
 function doGet(e) {
     try {
+        if (!checkAppSecret(e && e.parameter ? e.parameter.token : null)) {
+            return unauthorizedResponse();
+        }
+
         if (e && e.parameter && e.parameter.action === 'getAudio') {
             return getAudioBase64(e.parameter.fileId);
         }
@@ -80,6 +96,10 @@ function doPost(e) {
     try {
         const body = JSON.parse(e.postData.contents);
         const action = body.action;
+
+        if (!checkAppSecret(body.token)) {
+            return unauthorizedResponse();
+        }
 
         switch (action) {
             case 'save':

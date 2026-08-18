@@ -1776,6 +1776,39 @@ select.form-input {
   border-radius: 2px;
 }
 
+/* 可點開信念日記的日期。多留一點下方空間給圓點，避免和 is-today 的底線疊在一起 */
+.habit-day-col.is-clickable {
+  position: relative;
+  cursor: pointer;
+  padding-bottom: 0.7rem !important;
+  user-select: none;
+}
+
+@media (hover: hover) {
+  .habit-day-col.is-clickable:hover {
+    color: var(--accent-primary);
+  }
+}
+
+.habit-day-col.is-clickable:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: -2px;
+  border-radius: var(--radius-sm);
+}
+
+/* 這天寫過信念 —— 用 ::before，::after 已經被 is-today 的底線佔走 */
+.habit-day-col.has-belief::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 3px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent-warning);
+}
+
 .habit-name-cell {
   display: flex;
   align-items: center;
@@ -2562,7 +2595,7 @@ select.form-input {
   flex-wrap: wrap;
 }
 
-/* 手機：三顆按鈕平分整列，靠縮 padding 而不是壓縮文字來塞進畫面 */
+/* 手機：按鈕平分整列，靠縮 padding 而不是壓縮文字來塞進畫面 */
 @media (max-width: 768px) {
   /* flex-basis 用 auto、不設 min-width:0，配合 nowrap 讓按鈕最小就是文字寬度；
      真的塞不下時由 flex-wrap 整顆換行，不會擠成一團或溢出 */
@@ -2572,15 +2605,6 @@ select.form-input {
     padding-right: 0.5rem;
     justify-content: center;
   }
-
-  .settings-actions .modal-btn.sync-now {
-    gap: 0.25rem;
-  }
-
-  /* 「以本機覆寫雲端」字比原本的「立即同步」長，手機上把圖示收起來讓三顆按鈕還能同一列 */
-  .settings-actions .modal-btn.sync-now svg {
-    display: none;
-  }
 }
 
 .settings-modal .modal-btn.confirm {
@@ -2589,22 +2613,6 @@ select.form-input {
 
 .settings-modal .modal-btn.confirm:hover {
   box-shadow: 0 4px 20px color-mix(in srgb, var(--accent-primary) 40%, transparent);
-}
-
-/* 這顆是「本機覆寫雲端」的破壞性操作，用警示色而不是原本的綠色，避免看起來像安全的同步 */
-.modal-btn.sync-now {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  background: color-mix(in srgb, var(--accent-warning) 15%, transparent);
-  color: var(--accent-warning);
-  border: 1px solid color-mix(in srgb, var(--accent-warning) 35%, transparent);
-}
-
-@media (hover: hover) {
-  .modal-btn.sync-now:hover {
-    background: color-mix(in srgb, var(--accent-warning) 25%, transparent);
-  }
 }
 
 /* ── Loading Overlay ── */
@@ -2874,19 +2882,51 @@ select.form-input {
   border-radius: 5px;
 }
 
-/* 唯讀顯示用，不需要 .form-input 那種可輸入欄位的高度與內距 */
-.settings-url-display {
-  opacity: 0.55;
-  cursor: default;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.75rem;
-  user-select: none;
-  min-height: 0;
-  padding: 0.4rem 0.65rem;
+/* .form-input 本身沒有寬度，在別的版面是被 flex/grid 撐開的；
+   設定頁裡是獨立區塊，要自己補滿寬 */
+.settings-section .form-input {
+  display: block;
+  width: 100%;
   margin-top: 0.4rem;
-  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  min-height: 2.6rem;
+}
+
+/* 測試連線：按鈕與結果訊息同一列 */
+.settings-conn-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.6rem;
+  flex-wrap: wrap;
+}
+
+#testConnBtn {
+  padding: 0.45rem 1rem;
+  font-size: 0.8rem;
+  background: var(--bg-glass);
+  border: 1px solid var(--border-light);
+  color: var(--text-accent);
+}
+
+@media (hover: hover) {
+  #testConnBtn:hover {
+    border-color: color-mix(in srgb, var(--accent-primary) 50%, transparent);
+    color: var(--text-primary);
+  }
+}
+
+.settings-conn-result {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.settings-conn-result.ok {
+  color: var(--accent-success);
+}
+
+.settings-conn-result.error {
+  color: var(--accent-danger);
 }
 
 /* ── Keyboard shortcut hint ── */
@@ -3044,4 +3084,308 @@ select.form-input {
 
 .habit-check-cell.readonly.checked:hover .habit-check-dot {
   border-color: var(--accent-primary);
+}
+/* ── 信念日記（轉念）── */
+
+/* 解鎖面板 */
+.belief-lock {
+  max-width: 420px;
+  margin: 3rem auto;
+  padding: 2rem 1.5rem;
+  text-align: center;
+  background: var(--bg-glass);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+}
+
+.belief-lock-icon svg {
+  width: 40px;
+  height: 40px;
+  color: var(--accent-primary);
+  margin-bottom: 0.75rem;
+}
+
+.belief-lock h3 {
+  font-size: 1.1rem;
+  color: var(--text-primary);
+  margin-bottom: 0.5rem;
+}
+
+.belief-lock-desc {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: 1.25rem;
+}
+
+/* 密碼沒有還原後門，這句警告要看得見，不能弱化成一般提示文字 */
+.belief-lock-warn {
+  min-height: 1.2rem;
+  margin: 0.75rem 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--accent-warning);
+}
+
+.belief-lock .modal-btn.confirm {
+  width: 100%;
+  background: var(--gradient-primary);
+}
+
+/* 工具列 */
+.belief-toolbar {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 1.25rem;
+}
+
+.belief-toolbar .form-input {
+  flex: 1 1 220px;
+  min-width: 0;
+  margin: 0;
+}
+
+.belief-filter-chips {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.belief-chip {
+  padding: 0.4rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-light);
+  background: var(--bg-glass);
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: var(--transition);
+  white-space: nowrap;
+}
+
+.belief-chip.active {
+  border-color: color-mix(in srgb, var(--accent-primary) 50%, transparent);
+  background: color-mix(in srgb, var(--accent-primary) 18%, transparent);
+  color: var(--text-primary);
+}
+
+@media (hover: hover) {
+  .belief-chip:hover {
+    color: var(--text-primary);
+  }
+}
+
+/* 列表 */
+.belief-date-group {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-accent);
+  margin: 1.25rem 0 0.6rem;
+  letter-spacing: 0.03em;
+}
+
+.belief-date-group:first-child {
+  margin-top: 0;
+}
+
+.belief-item {
+  padding: 1rem 1.1rem;
+  margin-bottom: 0.75rem;
+  background: var(--bg-glass);
+  border: 1px solid var(--border-light);
+  border-left: 3px solid color-mix(in srgb, var(--accent-primary) 55%, transparent);
+  border-radius: var(--radius-md);
+}
+
+/* 還沒轉念的用警示色左邊條，掃過清單時一眼看得出哪些還卡著 */
+.belief-item.pending {
+  border-left-color: color-mix(in srgb, var(--accent-warning) 65%, transparent);
+}
+
+.belief-item-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+  min-height: 1.4rem;
+}
+
+.belief-item-date {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.belief-badge {
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--accent-warning);
+  background: color-mix(in srgb, var(--accent-warning) 15%, transparent);
+}
+
+.belief-item-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 0.25rem;
+}
+
+.belief-edit-btn,
+.belief-delete-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+@media (hover: hover) {
+  .belief-edit-btn:hover {
+    color: var(--accent-primary);
+    background: var(--bg-glass);
+  }
+
+  .belief-delete-btn:hover {
+    color: var(--accent-danger);
+    background: var(--bg-glass);
+  }
+}
+
+.belief-field + .belief-field {
+  margin-top: 0.7rem;
+}
+
+.belief-field-label {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.05em;
+  margin-bottom: 0.2rem;
+}
+
+.belief-field-text {
+  font-size: 0.9rem;
+  line-height: 1.65;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.belief-field-text.placeholder {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* 表單 */
+.belief-form {
+  padding: 1rem 1.1rem;
+  margin-bottom: 0.75rem;
+  background: var(--bg-glass);
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 40%, transparent);
+  border-radius: var(--radius-md);
+  text-align: left;
+}
+
+.belief-textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 4.5rem;
+  line-height: 1.6;
+  font-family: inherit;
+}
+
+.belief-optional {
+  font-weight: 400;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.belief-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-top: 1rem;
+}
+
+.belief-add-inline {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  width: 100%;
+  padding: 0.7rem;
+  border: 1px dashed var(--border-light);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+@media (hover: hover) {
+  .belief-add-inline:hover {
+    border-color: color-mix(in srgb, var(--accent-primary) 50%, transparent);
+    color: var(--text-primary);
+  }
+}
+
+/* 彈窗 */
+.belief-modal {
+  max-width: 560px;
+  width: 92%;
+  text-align: left;
+}
+
+.belief-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.belief-modal-header h3 {
+  font-size: 1rem;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+/* 一天可以有很多則，超過畫面就讓內容自己捲，不要把彈窗撐出視窗外 */
+.belief-modal-body {
+  max-height: min(60vh, 520px);
+  overflow-y: auto;
+  margin: 0 -0.25rem;
+  padding: 0 0.25rem;
+}
+
+.belief-modal-empty {
+  padding: 1.5rem 0;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+@media (max-width: 768px) {
+  .belief-toolbar .form-input {
+    flex: 1 1 100%;
+  }
+
+  .belief-toolbar #addBeliefBtn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .belief-modal {
+    width: 94%;
+  }
 }

@@ -13,7 +13,7 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;700&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=1.59">
+    <link rel="stylesheet" href="styles.css?v=1.60">
     <!-- 主題早期初始化：防止 Safari 快取舊 app.js 導致閃白 -->
     <script>
     (function() {
@@ -114,6 +114,14 @@
                     <path d="M7 14l2 2 4-4" />
                 </svg>
                 <span>習慣追蹤</span>
+            </button>
+            <button class="nav-btn" data-view="belief" id="navBelief">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 3a6 6 0 0 0-3.6 10.8c.5.4.8.9.9 1.5l.2 1.2h5l.2-1.2c.1-.6.4-1.1.9-1.5A6 6 0 0 0 12 3z" />
+                    <line x1="10" y1="20" x2="14" y2="20" />
+                </svg>
+                <span>轉念</span>
             </button>
             <div class="nav-divider"></div>
 
@@ -745,7 +753,83 @@
             </div>
         </section>
 
+        <!-- Belief Journal View -->
+        <section class="view" id="beliefView">
+            <div class="view-header">
+                <div>
+                    <h1 class="view-title">轉念
+                        <svg class="heading-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 3a6 6 0 0 0-3.6 10.8c.5.4.8.9.9 1.5l.2 1.2h5l.2-1.2c.1-.6.4-1.1.9-1.5A6 6 0 0 0 12 3z" />
+                            <line x1="10" y1="20" x2="14" y2="20" />
+                        </svg>
+                    </h1>
+                    <p class="view-subtitle">寫下當下的信念，之後回頭補上如何轉念</p>
+                </div>
+            </div>
+
+            <!-- 未解鎖時顯示，解鎖後隱藏 -->
+            <div class="belief-lock" id="beliefLockPanel" style="display:none">
+                <div class="belief-lock-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                    </svg>
+                </div>
+                <h3 id="beliefLockTitle">設定加密密碼</h3>
+                <p class="belief-lock-desc" id="beliefLockDesc"></p>
+                <input type="password" class="form-input" id="beliefPassInput" placeholder="加密密碼"
+                    autocomplete="new-password" autocapitalize="off" spellcheck="false">
+                <input type="password" class="form-input" id="beliefPassConfirm" placeholder="再輸入一次"
+                    autocomplete="new-password" autocapitalize="off" spellcheck="false" style="margin-top:0.6rem">
+                <p class="belief-lock-warn" id="beliefLockWarn"></p>
+                <button type="button" class="modal-btn confirm" id="beliefUnlockBtn">解鎖</button>
+            </div>
+
+            <!-- 解鎖後的內容 -->
+            <div id="beliefContent" style="display:none">
+                <div class="belief-toolbar">
+                    <input type="text" id="beliefSearch" class="form-input" placeholder="搜尋信念或轉念內容..."
+                        autocomplete="off">
+                    <div class="belief-filter-chips">
+                        <button type="button" class="belief-chip active" data-filter="all">全部</button>
+                        <button type="button" class="belief-chip" data-filter="pending">待轉念</button>
+                    </div>
+                    <button type="button" id="addBeliefBtn" class="habit-add-btn">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="12" y1="5" x2="12" y2="19" />
+                            <line x1="5" y1="12" x2="19" y2="12" />
+                        </svg>
+                        新增信念
+                    </button>
+                </div>
+                <div id="beliefList" class="belief-list"></div>
+                <div class="empty-state small" id="emptyBelief" style="display:none">
+                    <p>還沒有任何紀錄，從習慣追蹤點日期或按上方「新增信念」開始。</p>
+                </div>
+            </div>
+        </section>
+
     </main>
+
+    <!-- Belief Journal Modal（從習慣追蹤點日期開啟）-->
+    <div class="modal-overlay" id="beliefModal">
+        <div class="modal-content belief-modal">
+            <div class="belief-modal-header">
+                <h3 id="beliefModalTitle"></h3>
+                <button type="button" class="card-record-close" id="beliefModalClose" aria-label="關閉">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                        <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                </button>
+            </div>
+            <div id="beliefModalBody" class="belief-modal-body"></div>
+        </div>
+    </div>
 
     <!-- Settings Modal -->
     <div class="modal-overlay" id="settingsModal">
@@ -759,8 +843,23 @@
                     </svg>
                     資料庫網址 (Apps Script)
                 </label>
-                <div class="form-input settings-url-display" id="sheetUrlDisplay" title="資料庫網址（固定）"></div>
-                <p class="settings-hint">固定連線，無法手動修改</p>
+                <input type="url" class="form-input" id="sheetUrlInput" placeholder="https://script.google.com/macros/s/.../exec"
+                    autocomplete="off" autocapitalize="off" spellcheck="false">
+                <label class="form-label" for="appSecretInput" style="margin-top:0.75rem">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                    </svg>
+                    存取密鑰 (APP_SECRET)
+                </label>
+                <input type="password" class="form-input" id="appSecretInput" placeholder="Apps Script 指令碼屬性中的 APP_SECRET"
+                    autocomplete="off" autocapitalize="off" spellcheck="false">
+                <div class="settings-conn-row">
+                    <button type="button" class="modal-btn secondary" id="testConnBtn">測試連線</button>
+                    <span class="settings-conn-result" id="testConnResult"></span>
+                </div>
+                <p class="settings-hint">網址與密鑰只儲存在這台裝置，不會寫進程式碼。換裝置需要重新輸入一次。</p>
             </div>
 
             <div class="settings-section">
@@ -865,37 +964,7 @@
             </div>
             <div class="settings-actions">
                 <button class="modal-btn cancel" id="cancelSettings">取消</button>
-                <button class="modal-btn sync-now" id="syncNowBtn" title="把本機資料整包推上雲端，會覆蓋雲端現有內容">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                        stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M20 16.58A5 5 0 0 0 18 7h-1.26A8 8 0 1 0 4 15.25" />
-                        <polyline points="16 16 12 12 8 16" />
-                        <line x1="12" y1="12" x2="12" y2="21" />
-                    </svg>
-                    以本機覆寫雲端
-                </button>
                 <button class="modal-btn confirm" id="saveSettings">儲存設定</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Overwrite Cloud Confirmation Modal -->
-    <div class="modal-overlay" id="overwriteCloudModal">
-        <div class="modal-content">
-            <div class="modal-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
-                    stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                    <line x1="12" y1="9" x2="12" y2="13" />
-                    <line x1="12" y1="17" x2="12.01" y2="17" />
-                </svg>
-            </div>
-            <h3>以本機覆寫雲端</h3>
-            <p>將把這台裝置的 <strong id="overwriteCardCount">0</strong> 張卡片整包推上雲端，<strong>雲端現有內容會被覆蓋</strong>。</p>
-            <p class="modal-note">平常新增／編輯／刪除都會自動同步，不需要按這裡。只有在雲端資料出錯、而這台裝置的資料是正確的時候才用。</p>
-            <div class="modal-actions">
-                <button class="modal-btn cancel" id="cancelOverwriteCloud">取消</button>
-                <button class="modal-btn confirm" id="confirmOverwriteCloud">確認覆寫</button>
             </div>
         </div>
     </div>
@@ -1074,7 +1143,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <script src="https://unpkg.com/wanakana@5.3.1/wanakana.min.js"></script>
-    <script src="app.js?v=1.59"></script>
+    <script src="app.js?v=1.60"></script>
 
     <!-- OCR Result Overlay -->
     <div id="ocrOverlay"

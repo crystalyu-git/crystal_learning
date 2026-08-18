@@ -30,6 +30,10 @@ let cardChecks = {}; // { [cardId]: { "YYYY-MM-DD": true } } — 知識庫卡片
 let habitScrollInitialized = false;
 const HABIT_MAX_MONTHS_BACK = 11; // 打卡表最多回溯 11 個月，避免表格無限成長
 
+// 信念日記（轉念）：內容一律加密後才落地，beliefs 是解密後的明文，只存在記憶體
+let beliefs = []; // [{ id, date: "YYYY-MM-DD", belief, reframe, createdAt, updatedAt }]
+let beliefLocked = true; // 尚未解鎖時為 true，此時不可寫入，避免用空資料覆寫掉密文
+
 // Language Filter: persisted in localStorage
 let currentLangFilter = localStorage.getItem('crystal_lang_filter') || 'all';
 
@@ -43,24 +47,48 @@ const svgIcon = (paths) => `<svg viewBox="0 0 24 24" fill="none" stroke="current
 const ICON_INBOX = svgIcon('<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>');
 const ICON_SEARCH = svgIcon('<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>');
 
-// ── Database Proxy API URL ──
-// 含 getAudio 端點的部署（iOS 播 Drive 音檔要靠它）
-const DEFAULT_NOTION_URL = 'https://script.google.com/macros/s/AKfycbwTp_1PYsL9eAoAtL8AzTCT_EPssN3_KsOXKhPQrQ9F6Bw2LWMNYFU-F8Nk8-ruRkIrZw/exec';
-// Old deprecated URLs — auto-migrate if still stored on this device
-const _OLD_NOTION_URLS = [
-  'https://script.google.com/macros/s/AKfycbwYDvfHI5XNMhwmF8v4KC7hCOs_xHQXNjelVriO5cpWOu0lxduFcBa40Ex6-CPwWF2q/exec',
-  'https://script.google.com/macros/s/AKfycbyi3PtLL5wwEdx2feSYHiaRC0FrF-9YXI3P-WXdfVVg0Bmz3ClOs5JKurwkaz69Fw9POA/exec',
-];
-(function migrateNotionUrl() {
-  const stored = localStorage.getItem('crystal_learning_notion_url');
-  // If stored value is an old URL or empty string, clear it so DEFAULT_NOTION_URL takes effect
-  if (_OLD_NOTION_URLS.includes(stored) || stored === '') {
-    localStorage.removeItem('crystal_learning_notion_url');
+// ── Database Proxy API ──
+// 網址與存取密鑰都只存在本機，不寫進原始碼：這個 repo 是公開的，寫進來等於直接對外發布。
+// 過去硬寫的那幾組網址已經永久留在 git 歷史裡，對應的部署必須在 Apps Script 端刪除才會失效。
+const PROXY_URL_KEY = 'crystal_learning_notion_url';
+const PROXY_SECRET_KEY = 'crystal_learning_app_secret';
+
+// 舊版硬寫的網址若還殘留在這台裝置上就清掉——對應部署已刪除，留著只會一直連線失敗
+(function clearRetiredProxyUrls() {
+  const stored = localStorage.getItem(PROXY_URL_KEY);
+  if (stored && stored.includes('AKfycb') && !localStorage.getItem(PROXY_SECRET_KEY)) {
+    // 有網址卻沒有密鑰 → 是改版前留下的，一律清掉要求重新設定
+    localStorage.removeItem(PROXY_URL_KEY);
   }
 })();
 
 function getNotionProxyUrl() {
-  return DEFAULT_NOTION_URL;
+  return localStorage.getItem(PROXY_URL_KEY) || '';
+}
+
+function getAppSecret() {
+  return localStorage.getItem(PROXY_SECRET_KEY) || '';
+}
+
+// 後端一律要求 token。GET 放 query string、POST 放 body——
+// 絕對不要改用自訂 header：那會觸發 CORS preflight，而 Apps Script 無法回應 OPTIONS，
+// 整個後端會直接失效。text/plain 這個 content-type 也是同一個理由，不要改。
+function proxyGetUrl(params = {}) {
+  const base = getNotionProxyUrl();
+  if (!base) return '';
+  const qs = new URLSearchParams({ ...params, token: getAppSecret() });
+  return `${base}${base.includes('?') ? '&' : '?'}${qs.toString()}`;
+}
+
+async function proxyPost(payload) {
+  const url = getNotionProxyUrl();
+  if (!url) throw new Error('尚未設定後端網址');
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain' },
+    body: JSON.stringify({ ...payload, token: getAppSecret() }),
+  });
+  return res.json();
 }
 
 function adjustHexToRgba(hex, percent, alpha) {
@@ -343,11 +371,15 @@ async function initApp() {
   initReview();
   initLibrary();
   initHabitTracker();
+  initBelief();
   initModal();
   initSettings();
   initAudioActions();
   initSmartInput();
   updateDateDisplay();
+
+  // 信念日記：這台裝置存過密碼就自動解鎖，解不開也只是維持鎖定，不影響其他功能
+  await tryAutoUnlockBeliefs();
 
   // Apply language context to start
   updateLanguageContextText();
@@ -425,72 +457,58 @@ function saveCardChecksToLocal() {
 }
 
 // ── Database Proxy API ──
+// 密鑰錯誤要能跟一般失敗區分開來，設定頁的「測試連線」才給得出有用的訊息
+class UnauthorizedError extends Error {
+  constructor() {
+    super('存取密鑰不正確');
+    this.name = 'UnauthorizedError';
+  }
+}
+
+function throwIfUnauthorized(json) {
+  if (json && json.success === false && json.code === 401) throw new UnauthorizedError();
+}
+
 const NotionAPI = {
   async loadAll() {
-    const url = getNotionProxyUrl();
+    const url = proxyGetUrl();
     if (!url) return null;
     const res = await fetch(url);
     const data = await res.json();
+    throwIfUnauthorized(data);
     if (data.success) return data.cards;
     throw new Error(data.error || 'Failed to load');
   },
 
   async saveCard(card) {
-    const url = getNotionProxyUrl();
-    if (!url) return;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'save', card }),
-    });
-    const json = await res.json();
+    if (!getNotionProxyUrl()) return;
+    const json = await proxyPost({ action: 'save', card });
+    throwIfUnauthorized(json);
     if (!json.success) throw new Error(json.error || 'Save failed');
     return json;
   },
 
   async deleteCard(id) {
-    const url = getNotionProxyUrl();
-    if (!url) return;
-    await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'delete', id }),
-    });
+    if (!getNotionProxyUrl()) return;
+    await proxyPost({ action: 'delete', id });
   },
 
   async syncAll(cardsData) {
-    const url = getNotionProxyUrl();
-    if (!url) return;
-    await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'sync', cards: cardsData }),
-    });
+    if (!getNotionProxyUrl()) return;
+    await proxyPost({ action: 'sync', cards: cardsData });
   },
 
   async uploadAudio(base64Data, filename, mimeType, lang) {
-    const url = getNotionProxyUrl();
-    if (!url) throw new Error('No proxy URL configured');
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'uploadAudio', base64Data, filename, mimeType, lang }),
-    });
-    const json = await res.json();
+    if (!getNotionProxyUrl()) throw new Error('No proxy URL configured');
+    const json = await proxyPost({ action: 'uploadAudio', base64Data, filename, mimeType, lang });
+    throwIfUnauthorized(json);
     if (!json.success) throw new Error(json.error || 'Upload failed');
     return json.url;
   },
 
   async deleteAudio(fileId) {
-    const url = getNotionProxyUrl();
-    if (!url) return;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'deleteAudio', fileId }),
-    });
-    const json = await res.json();
-    return json;
+    if (!getNotionProxyUrl()) return;
+    return proxyPost({ action: 'deleteAudio', fileId });
   },
 };
 
@@ -544,14 +562,21 @@ async function syncFromNotion() {
         pushHabitsToNotion();
       }
 
+      // ── 信念日記（逐月比對，未解鎖時只取回金鑰卡片、不動本機密文）──
+      await mergeBeliefsFromCloud(notionCards);
+
       // ── 以資料庫為主（Source of Truth）全數覆寫本地端 ──
-      const realNotionCards = notionCards.filter(c => c.id !== STREAK_CARD_ID && c.id !== HABITS_CARD_ID);
+      const realNotionCards = notionCards.filter(c => !isMetaCard(c));
       cards = [...realNotionCards];
       saveCardsToLocal();
     } else if (cards.length > 0) {
-      // Database is empty but local has data — push local to Database
+      // Database is empty but local has data — push local to Database。
+      // syncAll 會先刪光整張表，隱藏卡片不在 cards 裡，全部都要補推回去
       await NotionAPI.syncAll(cards);
       if (habits.length > 0) pushHabitsToNotion();
+      saveStreak(loadStreak());
+      pushBeliefKeyCard();
+      pushBeliefsToNotion();
     }
     updateSyncStatus('connected');
     updateDashboard();
@@ -560,6 +585,9 @@ async function syncFromNotion() {
     // 會一直顯示同步前的「知識庫是空的」，要切走再切回來才看得到資料
     if ($('#libraryView') && $('#libraryView').classList.contains('active')) {
       renderLibrary();
+    }
+    if ($('#beliefView') && $('#beliefView').classList.contains('active')) {
+      renderBeliefView();
     }
     return true;
   } catch (e) {
@@ -704,6 +732,16 @@ function hideLoading() {
 
 const STREAK_CARD_ID = '__crystal_streak__';
 
+// 隱藏的中繼卡片（連續天數、習慣打卡、信念日記）借用同一張字庫表存放，
+// 但不是單字卡。任何會顯示或複習卡片的地方都必須先濾掉，否則會混進知識庫
+function isMetaCard(c) {
+  const id = String(c && c.id || '');
+  return id === STREAK_CARD_ID
+    || id === HABITS_CARD_ID
+    || id === BELIEF_KEY_CARD_ID
+    || id.startsWith(BELIEF_CARD_PREFIX);
+}
+
 function loadStreak() {
   try {
     const data = localStorage.getItem('crystal_learning_streak');
@@ -753,6 +791,362 @@ function pushHabitsToNotion() {
     };
     saveCardToNotion(habitsCard); // fire-and-forget
   }, 600);
+}
+
+/* ─────────────────────────────────────────────
+   信念日記（轉念）
+   ─────────────────────────────────────────────
+   這個 repo 是公開的、後端部署又必須是 "Anyone"，所以信念內容一律在瀏覽器端
+   加密後才落地（本機 localStorage 與雲端 Sheet 存的都是密文）。密碼只存在使用者
+   自己的裝置，程式碼與後端都拿不到，也就沒有任何還原的後門——密碼忘記等於資料永久遺失。
+   ───────────────────────────────────────────── */
+
+const BELIEF_KEY_CARD_ID = '__crystal_belief_key__';
+const BELIEF_CARD_PREFIX = '__crystal_beliefs_';
+const BELIEF_STORE_KEY = 'crystal_beliefs';
+const BELIEF_UPDATED_KEY = 'crystal_belief_updated_at';
+const BELIEF_PASS_KEY = 'crystal_belief_pass';
+const BELIEF_SALT_KEY = 'crystal_belief_salt';
+const BELIEF_VERIFIER_KEY = 'crystal_belief_verifier';
+const BELIEF_VERIFIER_TEXT = 'crystal-belief-ok';
+const PBKDF2_ITERATIONS = 150000;
+
+let beliefKey = null; // 解鎖後快取的 CryptoKey，只存在記憶體
+let beliefPushTimer = null;
+
+// ── base64 ⇄ bytes ──
+function bytesToB64(bytes) {
+  let bin = '';
+  bytes.forEach(b => { bin += String.fromCharCode(b); });
+  return btoa(bin);
+}
+
+function b64ToBytes(b64) {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+// PBKDF2-SHA256 導出 AES-GCM 金鑰。salt 隨資料一起同步，換裝置輸入同一組密碼才導得出同一把鑰匙
+async function deriveBeliefKey(passphrase, saltBytes) {
+  const enc = new TextEncoder();
+  const baseKey = await crypto.subtle.importKey(
+    'raw', enc.encode(passphrase), 'PBKDF2', false, ['deriveKey']
+  );
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt: saltBytes, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
+    baseKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+
+// 回傳 "v1.<base64 iv>.<base64 ciphertext>"
+// IV 每次都重新隨機產生——AES-GCM 用同一把金鑰重用 IV 會直接洩漏明文，絕不可省
+async function encryptBelief(plaintext, key = beliefKey) {
+  if (!key) throw new Error('尚未解鎖');
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const buf = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    key,
+    new TextEncoder().encode(plaintext)
+  );
+  return `v1.${bytesToB64(iv)}.${bytesToB64(new Uint8Array(buf))}`;
+}
+
+// 解不開一律回傳 null（密碼錯、資料損毀、格式不符都算），由呼叫端決定怎麼處理。
+// 這裡刻意不 throw，避免任何一處漏接就把整個同步流程炸掉
+async function decryptBelief(envelope, key = beliefKey) {
+  if (!key || typeof envelope !== 'string') return null;
+  const parts = envelope.split('.');
+  if (parts.length !== 3 || parts[0] !== 'v1') return null;
+  try {
+    const buf = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: b64ToBytes(parts[1]) },
+      key,
+      b64ToBytes(parts[2])
+    );
+    return new TextDecoder().decode(buf);
+  } catch (e) {
+    return null; // AES-GCM 驗證失敗
+  }
+}
+
+// ── 解鎖 ──
+
+function hasBeliefPassphrase() {
+  return !!localStorage.getItem(BELIEF_PASS_KEY);
+}
+
+// 這台裝置是否已經看過金鑰卡片（決定解鎖畫面要顯示「設定密碼」還是「輸入密碼」）
+function hasBeliefVault() {
+  return !!localStorage.getItem(BELIEF_SALT_KEY);
+}
+
+// 用 verifier 判斷密碼對不對。沒有 verifier（第一次使用）就直接視為通過
+async function verifyBeliefKey(key) {
+  const verifier = localStorage.getItem(BELIEF_VERIFIER_KEY);
+  if (!verifier) return true;
+  return (await decryptBelief(verifier, key)) === BELIEF_VERIFIER_TEXT;
+}
+
+// 首次設定密碼：產生 salt 與 verifier 並推上雲端
+async function createBeliefVault(passphrase) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const key = await deriveBeliefKey(passphrase, salt);
+  const verifier = await encryptBelief(BELIEF_VERIFIER_TEXT, key);
+
+  localStorage.setItem(BELIEF_SALT_KEY, bytesToB64(salt));
+  localStorage.setItem(BELIEF_VERIFIER_KEY, verifier);
+  localStorage.setItem(BELIEF_PASS_KEY, passphrase);
+  beliefKey = key;
+  beliefLocked = false;
+
+  pushBeliefKeyCard();
+  return true;
+}
+
+// 用密碼解鎖既有資料。密碼錯回傳 false，且不動任何既有資料
+async function unlockBeliefs(passphrase) {
+  const saltB64 = localStorage.getItem(BELIEF_SALT_KEY);
+  if (!saltB64) return createBeliefVault(passphrase);
+
+  const key = await deriveBeliefKey(passphrase, b64ToBytes(saltB64));
+  if (!(await verifyBeliefKey(key))) return false;
+
+  localStorage.setItem(BELIEF_PASS_KEY, passphrase);
+  beliefKey = key;
+  beliefLocked = false;
+  await loadBeliefsFromLocal();
+  return true;
+}
+
+// 開 App 時用已存的密碼自動解鎖
+async function tryAutoUnlockBeliefs() {
+  const pass = localStorage.getItem(BELIEF_PASS_KEY);
+  const saltB64 = localStorage.getItem(BELIEF_SALT_KEY);
+  if (!pass || !saltB64) return false;
+  try {
+    const key = await deriveBeliefKey(pass, b64ToBytes(saltB64));
+    if (!(await verifyBeliefKey(key))) return false;
+    beliefKey = key;
+    beliefLocked = false;
+    await loadBeliefsFromLocal();
+    return true;
+  } catch (e) {
+    console.warn('Belief auto-unlock failed:', e);
+    return false;
+  }
+}
+
+// 只忘掉這台裝置的密碼，不動任何資料
+function lockBeliefs() {
+  localStorage.removeItem(BELIEF_PASS_KEY);
+  beliefKey = null;
+  beliefLocked = true;
+  beliefs = [];
+}
+
+// ── 本機存取（本機也是加密存放）──
+
+async function loadBeliefsFromLocal() {
+  if (!beliefKey) return;
+  const raw = localStorage.getItem(BELIEF_STORE_KEY);
+  if (!raw) { beliefs = []; return; }
+  const json = await decryptBelief(raw);
+  if (json === null) {
+    // 解不開就維持鎖定，絕不用空陣列覆寫掉還在的密文
+    console.warn('本機信念資料解密失敗，保留密文');
+    beliefLocked = true;
+    beliefKey = null;
+    return;
+  }
+  try {
+    beliefs = JSON.parse(json) || [];
+  } catch (e) {
+    beliefs = [];
+  }
+}
+
+async function saveBeliefsToLocal() {
+  if (!beliefKey) return;
+  localStorage.setItem(BELIEF_STORE_KEY, await encryptBelief(JSON.stringify(beliefs)));
+}
+
+function loadBeliefUpdatedMap() {
+  try {
+    return JSON.parse(localStorage.getItem(BELIEF_UPDATED_KEY) || '{}');
+  } catch (e) {
+    return {};
+  }
+}
+
+function saveBeliefUpdatedMap(map) {
+  localStorage.setItem(BELIEF_UPDATED_KEY, JSON.stringify(map));
+}
+
+function beliefMonthKey(dateKey) {
+  return String(dateKey).slice(0, 7); // "YYYY-MM-DD" → "YYYY-MM"
+}
+
+// ── 雲端同步 ──
+
+function pushBeliefKeyCard() {
+  if (!getNotionProxyUrl()) return;
+  const salt = localStorage.getItem(BELIEF_SALT_KEY);
+  const verifier = localStorage.getItem(BELIEF_VERIFIER_KEY);
+  if (!salt || !verifier) return;
+  saveCardToNotion({
+    id: BELIEF_KEY_CARD_ID,
+    word: '__beliefkey__',
+    meaning: JSON.stringify({ salt, verifier }),
+    example: '', pronunciation: '', category: '', audioUrl: '', lang: '',
+    level: 0, nextReview: 0, createdAt: Date.now(), reviewCount: 0,
+  }, { silent: true });
+}
+
+// 標記某個月有異動並排程推送
+function markBeliefUpdated(monthKey) {
+  const map = loadBeliefUpdatedMap();
+  map[monthKey] = Date.now();
+  saveBeliefUpdatedMap(map);
+  pushBeliefsToNotion([monthKey]);
+}
+
+// 一個月一張隱藏卡片。不整包塞一張是因為 Sheets 單格上限 50,000 字元，
+// 加密後 base64 還會膨脹約 1.37 倍，長文字整包存大約一兩年就會撞頂且無聲截斷
+function pushBeliefsToNotion(monthKeys = null) {
+  if (!getNotionProxyUrl() || !beliefKey) return;
+  clearTimeout(beliefPushTimer);
+  beliefPushTimer = setTimeout(async () => {
+    const map = loadBeliefUpdatedMap();
+    const months = monthKeys || [...new Set(beliefs.map(b => beliefMonthKey(b.date)))];
+    for (const month of months) {
+      const monthItems = beliefs.filter(b => beliefMonthKey(b.date) === month);
+      try {
+        saveCardToNotion({
+          id: `${BELIEF_CARD_PREFIX}${month}__`,
+          word: '__beliefs__',
+          meaning: await encryptBelief(JSON.stringify(monthItems)),
+          example: String(map[month] || Date.now()),
+          pronunciation: '', category: '', audioUrl: '', lang: '',
+          level: 0, nextReview: 0, createdAt: Date.now(), reviewCount: 0,
+        }, { silent: true });
+      } catch (e) {
+        console.warn('Belief push failed for', month, e);
+      }
+    }
+  }, 600);
+}
+
+// 從同步結果中取出信念資料。未解鎖時什麼都不做——本機的密文原封不動留著
+async function mergeBeliefsFromCloud(notionCards) {
+  // 金鑰卡片先處理：換裝置時本機還沒有 salt，要靠它才解得開
+  const keyCard = notionCards.find(c => c.id === BELIEF_KEY_CARD_ID);
+  if (keyCard) {
+    try {
+      const { salt, verifier } = JSON.parse(keyCard.meaning || '{}');
+      if (salt && verifier) {
+        localStorage.setItem(BELIEF_SALT_KEY, salt);
+        localStorage.setItem(BELIEF_VERIFIER_KEY, verifier);
+      }
+    } catch (e) {
+      console.warn('Belief key card parse failed:', e);
+    }
+  }
+
+  if (!beliefKey) return; // 未解鎖，不動本機資料
+
+  const cloudCards = notionCards.filter(c => String(c.id).startsWith(BELIEF_CARD_PREFIX));
+  const map = loadBeliefUpdatedMap();
+  const staleMonths = [];
+  let changed = false;
+
+  for (const card of cloudCards) {
+    const month = String(card.id).slice(BELIEF_CARD_PREFIX.length).replace(/__$/, '');
+    const cloudAt = Number(card.example) || 0;
+    const localAt = Number(map[month]) || 0;
+
+    if (cloudAt > localAt) {
+      const json = await decryptBelief(card.meaning);
+      if (json === null) {
+        // 解不開（多半是密碼與這批資料不同）——保留本機、不覆寫，也不回推蓋掉雲端
+        console.warn('雲端信念資料解密失敗：', month);
+        continue;
+      }
+      try {
+        const items = JSON.parse(json) || [];
+        beliefs = beliefs.filter(b => beliefMonthKey(b.date) !== month).concat(items);
+        map[month] = cloudAt;
+        changed = true;
+      } catch (e) {
+        console.warn('Belief parse failed for', month, e);
+      }
+    } else if (localAt > cloudAt) {
+      staleMonths.push(month);
+    }
+  }
+
+  if (changed) {
+    saveBeliefUpdatedMap(map);
+    await saveBeliefsToLocal();
+  }
+  if (staleMonths.length) pushBeliefsToNotion(staleMonths);
+}
+
+// ── 資料操作 ──
+
+function getBeliefsByDate(dateKey) {
+  return beliefs
+    .filter(b => b.date === dateKey)
+    .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+}
+
+function dateHasBelief(dateKey) {
+  return beliefs.some(b => b.date === dateKey);
+}
+
+async function addBelief(dateKey, beliefText, reframeText) {
+  const text = (beliefText || '').trim();
+  if (!text || !beliefKey) return null;
+  const now = Date.now();
+  const item = {
+    id: 'belief_' + now + '_' + Math.random().toString(36).slice(2, 7),
+    date: dateKey,
+    belief: text,
+    reframe: (reframeText || '').trim(),
+    createdAt: now,
+    updatedAt: now,
+  };
+  beliefs.push(item);
+  await saveBeliefsToLocal();
+  markBeliefUpdated(beliefMonthKey(dateKey));
+  return item;
+}
+
+async function updateBelief(id, beliefText, reframeText) {
+  const item = beliefs.find(b => b.id === id);
+  if (!item || !beliefKey) return false;
+  const text = (beliefText || '').trim();
+  if (!text) return false;
+  item.belief = text;
+  item.reframe = (reframeText || '').trim();
+  item.updatedAt = Date.now();
+  await saveBeliefsToLocal();
+  markBeliefUpdated(beliefMonthKey(item.date));
+  return true;
+}
+
+async function deleteBelief(id) {
+  const item = beliefs.find(b => b.id === id);
+  if (!item) return false;
+  const month = beliefMonthKey(item.date);
+  beliefs = beliefs.filter(b => b.id !== id);
+  await saveBeliefsToLocal();
+  markBeliefUpdated(month);
+  return true;
 }
 
 // ── Language Filter System ──
@@ -841,8 +1235,8 @@ function renderLangFilterBars() {
 }
 
 function getCardsByLang() {
-  // Always exclude hidden meta-cards (streak, habit tracker) from display lists
-  const visible = cards.filter(c => c.id !== STREAK_CARD_ID && c.id !== HABITS_CARD_ID);
+  // Always exclude hidden meta-cards (streak, habit tracker, belief journal) from display lists
+  const visible = cards.filter(c => !isMetaCard(c));
   if (currentLangFilter === 'all') return visible;
   return visible.filter(c => getLangLabel(c.lang) === currentLangFilter);
 }
@@ -883,7 +1277,7 @@ function getCustomCategories() {
   const builtin = new Set([...(sel?.options || [])].map(o => o.value));
   const seen = new Set();
   cards.forEach(c => {
-    if (c.id === STREAK_CARD_ID || c.id === HABITS_CARD_ID) return;
+    if (isMetaCard(c)) return;
     if (c.lang && !builtin.has(c.lang)) seen.add(c.lang);
   });
   return [...seen].sort();
@@ -1163,6 +1557,7 @@ function switchView(viewName) {
   if (viewName === 'review') startReviewSession();
   if (viewName === 'library') renderLibrary();
   if (viewName === 'habit') renderHabitTracker({ anchorToday: true });
+  if (viewName === 'belief') renderBeliefView();
 }
 
 // ── Date Display ──
@@ -1406,7 +1801,7 @@ function todayKey() {
 function isLangCheckedTodayByOther(langLabel, exceptCardId, key) {
   return cards.some(c =>
     c.id !== exceptCardId &&
-    c.id !== STREAK_CARD_ID && c.id !== HABITS_CARD_ID &&
+    !isMetaCard(c) &&
     getLangLabel(c.lang) === langLabel &&
     isCardChecked(c.id, key)
   );
@@ -1476,7 +1871,8 @@ function scrollHabitTrackerToToday() {
 }
 
 // 渲染打卡表的月份列與日期列（習慣追蹤與卡片打卡紀錄共用）
-function renderTrackerHead(monthRow, dayRow, cols, today, nameLabel) {
+// clickableDays：只有習慣追蹤頁的日期可以點開信念日記，卡片打卡紀錄那張是唯讀的
+function renderTrackerHead(monthRow, dayRow, cols, today, nameLabel, clickableDays = false) {
   const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
 
   // Month header row (colspan per month group)
@@ -1504,10 +1900,21 @@ function renderTrackerHead(monthRow, dayRow, cols, today, nameLabel) {
     const d = new Date(ts);
     const isToday = ts === today;
     const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+    const key = habitDateKey(ts);
     const cls = ['habit-day-col'];
     if (isToday) cls.push('is-today');
     if (isWeekend) cls.push('is-weekend');
-    dayHtml += `<th class="${cls.join(' ')}" title="${weekdays[d.getDay()]}">${d.getDate()}</th>`;
+
+    let attrs = `title="${weekdays[d.getDay()]}"`;
+    if (clickableDays) {
+      cls.push('is-clickable');
+      // 已解鎖才標記圓點：鎖著的時候 beliefs 是空的，畫出來會誤導成「這天沒寫過」
+      const hasBelief = !beliefLocked && dateHasBelief(key);
+      if (hasBelief) cls.push('has-belief');
+      attrs = `title="${d.getMonth() + 1}/${d.getDate()}（${weekdays[d.getDay()]}）· 點擊記錄信念"`
+        + ` data-date="${key}" role="button" tabindex="0"`;
+    }
+    dayHtml += `<th class="${cls.join(' ')}" ${attrs}>${d.getDate()}</th>`;
   });
   dayHtml += '<th class="habit-streak-col">最高連續</th>';
   dayRow.innerHTML = dayHtml;
@@ -1602,7 +2009,7 @@ function renderHabitTracker({ anchorToday = false } = {}) {
   const cols = getHabitDateColumns();
   const today = getToday();
 
-  renderTrackerHead(monthRow, dayRow, cols, today, '習慣');
+  renderTrackerHead(monthRow, dayRow, cols, today, '習慣', true);
 
   // Habit rows
   body.innerHTML = habits.map(h => {
@@ -1728,7 +2135,321 @@ function initHabitTracker() {
     if (nameEl) startHabitRename(nameEl.dataset.habitId, nameEl);
   });
 
+  // 點日期開信念日記。拖曳誤觸不必另外擋：initHabitDragScroll 的 click 抑制
+  // 綁在外層 #habitTrackerScroll 且是 capture 階段，thead 也在它裡面
+  const dayRow = $('#habitDayRow');
+  dayRow.addEventListener('click', (e) => {
+    const dayCell = e.target.closest('.habit-day-col.is-clickable');
+    if (dayCell) openBeliefModal(dayCell.dataset.date);
+  });
+  dayRow.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const dayCell = e.target.closest('.habit-day-col.is-clickable');
+    if (dayCell) {
+      e.preventDefault();
+      openBeliefModal(dayCell.dataset.date);
+    }
+  });
+
   initHabitDragScroll($('#habitTrackerScroll'));
+}
+
+/* ── 信念日記 UI ── */
+
+let beliefFilter = 'all'; // 'all' | 'pending'
+let beliefEditingId = null; // 正在編輯的信念 id，null 代表新增
+
+function formatBeliefDate(dateKey) {
+  const [y, m, d] = String(dateKey).split('-').map(Number);
+  return `${y}年${m}月${d}日`;
+}
+
+// 信念與轉念都可能是好幾段，換行要留著才讀得下去
+function beliefTextHtml(text) {
+  return escapeHtml(text).replace(/\n/g, '<br>');
+}
+
+// 一則信念的顯示卡（彈窗與分頁共用）
+function beliefItemHtml(item, { showDate = false } = {}) {
+  const pending = !item.reframe;
+  return `<div class="belief-item${pending ? ' pending' : ''}" data-belief-id="${item.id}">
+    <div class="belief-item-head">
+      ${showDate ? `<span class="belief-item-date">${formatBeliefDate(item.date)}</span>` : ''}
+      ${pending ? '<span class="belief-badge">待轉念</span>' : ''}
+      <div class="belief-item-actions">
+        <button type="button" class="belief-edit-btn" data-belief-id="${item.id}" aria-label="編輯">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        </button>
+        <button type="button" class="belief-delete-btn" data-belief-id="${item.id}" aria-label="刪除">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="belief-field">
+      <span class="belief-field-label">信念</span>
+      <div class="belief-field-text">${beliefTextHtml(item.belief)}</div>
+    </div>
+    <div class="belief-field">
+      <span class="belief-field-label">我該如何轉念</span>
+      <div class="belief-field-text${pending ? ' placeholder' : ''}">${pending ? '尚未轉念，之後想通了再回來補上' : beliefTextHtml(item.reframe)}</div>
+    </div>
+  </div>`;
+}
+
+// 新增／編輯共用的表單
+function beliefFormHtml(item, dateKey) {
+  return `<form class="belief-form" data-date="${dateKey}" data-belief-id="${item ? item.id : ''}">
+    <label class="form-label" for="beliefInput">信念</label>
+    <textarea class="form-input belief-textarea" id="beliefInput" rows="3"
+      placeholder="此刻腦中盤旋的念頭是什麼？" required>${item ? escapeHtml(item.belief) : ''}</textarea>
+    <label class="form-label" for="reframeInput" style="margin-top:0.75rem">我該如何轉念<span class="belief-optional">（可留白，之後補）</span></label>
+    <textarea class="form-input belief-textarea" id="reframeInput" rows="3"
+      placeholder="換個角度看，還可以怎麼理解這件事？">${item ? escapeHtml(item.reframe) : ''}</textarea>
+    <div class="belief-form-actions">
+      <button type="button" class="modal-btn cancel belief-cancel-btn">取消</button>
+      <button type="submit" class="modal-btn confirm">${item ? '儲存' : '新增'}</button>
+    </div>
+  </form>`;
+}
+
+// ── 彈窗（從習慣追蹤點日期進來）──
+
+function openBeliefModal(dateKey) {
+  if (beliefLocked) {
+    // 鎖著就先把人帶去分頁解鎖，彈窗裡再塞一套解鎖流程只是重複
+    switchView('belief');
+    showToast('請先設定或輸入加密密碼');
+    return;
+  }
+  const modal = $('#beliefModal');
+  modal.dataset.date = dateKey;
+  $('#beliefModalTitle').textContent = `${formatBeliefDate(dateKey)} · 信念`;
+  beliefEditingId = null;
+  renderBeliefModalBody();
+  modal.classList.add('active');
+}
+
+function closeBeliefModal() {
+  $('#beliefModal').classList.remove('active');
+  beliefEditingId = null;
+}
+
+function renderBeliefModalBody({ showForm = false } = {}) {
+  const modal = $('#beliefModal');
+  const dateKey = modal.dataset.date;
+  const body = $('#beliefModalBody');
+  const items = getBeliefsByDate(dateKey);
+
+  let html = '';
+  if (items.length === 0 && !showForm) {
+    html += '<p class="belief-modal-empty">這天還沒有紀錄。</p>';
+  }
+  items.forEach(item => {
+    html += beliefEditingId === item.id
+      ? beliefFormHtml(item, dateKey)
+      : beliefItemHtml(item);
+  });
+
+  if (showForm && !beliefEditingId) {
+    html += beliefFormHtml(null, dateKey);
+  } else if (!beliefEditingId) {
+    html += `<button type="button" class="belief-add-inline" id="beliefAddInline">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      新增信念
+    </button>`;
+  }
+
+  body.innerHTML = html;
+  const ta = body.querySelector('.belief-textarea');
+  if (ta) ta.focus();
+}
+
+// ── 分頁 ──
+
+function renderBeliefView() {
+  const lockPanel = $('#beliefLockPanel');
+  const content = $('#beliefContent');
+  if (!lockPanel || !content) return;
+
+  if (beliefLocked) {
+    lockPanel.style.display = '';
+    content.style.display = 'none';
+    const existing = hasBeliefVault();
+    $('#beliefLockTitle').textContent = existing ? '輸入加密密碼' : '設定加密密碼';
+    $('#beliefLockDesc').textContent = existing
+      ? '這台裝置還沒解鎖過。輸入你當初設定的密碼即可讀取內容。'
+      : '信念內容會在這台裝置上加密後才儲存與上傳，雲端看到的是一串亂碼。';
+    $('#beliefLockWarn').textContent = existing
+      ? ''
+      : '密碼只存在你自己的裝置，沒有任何還原後門——忘記就再也解不開了。';
+    $('#beliefPassConfirm').style.display = existing ? 'none' : '';
+    $('#beliefUnlockBtn').textContent = existing ? '解鎖' : '設定密碼';
+    $('#beliefPassInput').value = '';
+    $('#beliefPassConfirm').value = '';
+    return;
+  }
+
+  lockPanel.style.display = 'none';
+  content.style.display = '';
+
+  const term = ($('#beliefSearch').value || '').toLowerCase().trim();
+  let list = [...beliefs];
+  if (beliefFilter === 'pending') list = list.filter(b => !b.reframe);
+  if (term) {
+    list = list.filter(b =>
+      (b.belief || '').toLowerCase().includes(term) ||
+      (b.reframe || '').toLowerCase().includes(term)
+    );
+  }
+  // 日期新到舊；同一天內先寫的在上面，讀起來才是當天的時序
+  list.sort((a, b) => b.date.localeCompare(a.date) || (a.createdAt || 0) - (b.createdAt || 0));
+
+  const emptyEl = $('#emptyBelief');
+  const listEl = $('#beliefList');
+  emptyEl.style.display = list.length === 0 ? '' : 'none';
+  emptyEl.querySelector('p').textContent = beliefs.length === 0
+    ? '還沒有任何紀錄，從習慣追蹤點日期或按上方「新增信念」開始。'
+    : '沒有符合條件的紀錄。';
+
+  // 依日期分組
+  let html = '';
+  let lastDate = null;
+  list.forEach(item => {
+    if (item.date !== lastDate) {
+      html += `<div class="belief-date-group">${formatBeliefDate(item.date)}</div>`;
+      lastDate = item.date;
+    }
+    html += beliefEditingId === item.id
+      ? beliefFormHtml(item, item.date)
+      : beliefItemHtml(item);
+  });
+  listEl.innerHTML = html;
+}
+
+function initBelief() {
+  // ── 解鎖面板 ──
+  const doUnlock = async () => {
+    const pass = $('#beliefPassInput').value;
+    const warn = $('#beliefLockWarn');
+    if (!pass) return;
+
+    if (!hasBeliefVault()) {
+      if (pass.length < 6) {
+        warn.textContent = '密碼至少 6 個字，太短容易被猜到。';
+        return;
+      }
+      if (pass !== $('#beliefPassConfirm').value) {
+        warn.textContent = '兩次輸入的密碼不一致。';
+        return;
+      }
+      await createBeliefVault(pass);
+      showToast('已建立加密日記');
+    } else {
+      const ok = await unlockBeliefs(pass);
+      if (!ok) {
+        warn.textContent = '密碼不正確，資料未受影響。';
+        $('#beliefPassInput').value = '';
+        return;
+      }
+      showToast('已解鎖');
+    }
+    warn.textContent = '';
+    renderBeliefView();
+    renderHabitTracker(); // 圓點要跟著出現
+  };
+
+  $('#beliefUnlockBtn').addEventListener('click', doUnlock);
+  $('#beliefPassConfirm').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); doUnlock(); }
+  });
+  $('#beliefPassInput').addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    if (hasBeliefVault()) doUnlock();
+    else $('#beliefPassConfirm').focus();
+  });
+
+  // ── 搜尋與篩選 ──
+  $('#beliefSearch').addEventListener('input', () => renderBeliefView());
+  $$('.belief-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      beliefFilter = chip.dataset.filter;
+      $$('.belief-chip').forEach(c => c.classList.toggle('active', c === chip));
+      renderBeliefView();
+    });
+  });
+
+  // 分頁的「新增信念」預設寫今天
+  $('#addBeliefBtn').addEventListener('click', () => openBeliefModal(habitDateKey(getToday())));
+
+  // ── 彈窗 ──
+  const modal = $('#beliefModal');
+  $('#beliefModalClose').addEventListener('click', closeBeliefModal);
+  modal.addEventListener('click', e => {
+    if (e.target === modal) closeBeliefModal();
+  });
+
+  // 兩個入口的互動邏輯一樣，用同一組 delegated handler
+  [$('#beliefModalBody'), $('#beliefList')].forEach(root => {
+    root.addEventListener('click', async e => {
+      const isModal = root.id === 'beliefModalBody';
+
+      if (e.target.closest('#beliefAddInline')) {
+        beliefEditingId = null;
+        renderBeliefModalBody({ showForm: true });
+        return;
+      }
+
+      const editBtn = e.target.closest('.belief-edit-btn');
+      if (editBtn) {
+        beliefEditingId = editBtn.dataset.beliefId;
+        isModal ? renderBeliefModalBody() : renderBeliefView();
+        return;
+      }
+
+      const cancelBtn = e.target.closest('.belief-cancel-btn');
+      if (cancelBtn) {
+        beliefEditingId = null;
+        isModal ? renderBeliefModalBody() : renderBeliefView();
+        return;
+      }
+
+      const delBtn = e.target.closest('.belief-delete-btn');
+      if (delBtn) {
+        const item = beliefs.find(b => b.id === delBtn.dataset.beliefId);
+        if (!item) return;
+        const preview = item.belief.length > 20 ? item.belief.slice(0, 20) + '…' : item.belief;
+        if (!confirm(`確定要刪除這則信念嗎？此操作無法復原。\n\n「${preview}」`)) return;
+        await deleteBelief(delBtn.dataset.beliefId);
+        beliefEditingId = null;
+        isModal ? renderBeliefModalBody() : renderBeliefView();
+        renderHabitTracker();
+        if (isModal) renderBeliefView();
+        showToast('已刪除');
+      }
+    });
+
+    root.addEventListener('submit', async e => {
+      const form = e.target.closest('.belief-form');
+      if (!form) return;
+      e.preventDefault();
+      const isModal = root.id === 'beliefModalBody';
+      const beliefText = form.querySelector('#beliefInput').value;
+      const reframeText = form.querySelector('#reframeInput').value;
+      if (!beliefText.trim()) return;
+
+      if (form.dataset.beliefId) {
+        await updateBelief(form.dataset.beliefId, beliefText, reframeText);
+      } else {
+        await addBelief(form.dataset.date, beliefText, reframeText);
+      }
+      beliefEditingId = null;
+      isModal ? renderBeliefModalBody() : renderBeliefView();
+      renderHabitTracker(); // 更新日期下方的圓點
+      if (isModal) renderBeliefView();
+      showToast('已儲存');
+    });
+  });
 }
 
 // ── Add Form ──
@@ -2612,11 +3333,14 @@ function initModal() {
 function initSettings() {
   const modal = $('#settingsModal');
 
-  // Show hardcoded URL (read-only)
-  $('#sheetUrlDisplay').textContent = DEFAULT_NOTION_URL;
-
   // Open settings
   $('#settingsBtn').addEventListener('click', () => {
+    // 後端設定每次開啟都從 localStorage 重讀，避免顯示到上次取消掉的內容
+    $('#sheetUrlInput').value = getNotionProxyUrl();
+    $('#appSecretInput').value = getAppSecret();
+    $('#testConnResult').textContent = '';
+    $('#testConnResult').className = 'settings-conn-result';
+
     // Refresh color pickers from saved theme
     const savedTheme = localStorage.getItem('crystal_learning_theme');
     try {
@@ -2734,8 +3458,56 @@ function initSettings() {
     showToast('已還原為預設配色');
   });
 
+  // 測試連線：把「網址不通」與「密鑰不對」分開講，不然只看到一句失敗會不知道要改哪個
+  $('#testConnBtn').addEventListener('click', async () => {
+    const result = $('#testConnResult');
+    const url = $('#sheetUrlInput').value.trim();
+    const secret = $('#appSecretInput').value.trim();
+
+    if (!url) {
+      result.textContent = '請先填入資料庫網址';
+      result.className = 'settings-conn-result error';
+      return;
+    }
+
+    result.textContent = '測試中...';
+    result.className = 'settings-conn-result';
+
+    // 暫時套用待測的設定，測完不論成敗都還原，避免測試把既有可用設定弄壞
+    const prevUrl = localStorage.getItem(PROXY_URL_KEY);
+    const prevSecret = localStorage.getItem(PROXY_SECRET_KEY);
+    localStorage.setItem(PROXY_URL_KEY, url);
+    localStorage.setItem(PROXY_SECRET_KEY, secret);
+    try {
+      const list = await NotionAPI.loadAll();
+      result.textContent = `連線成功，讀到 ${list ? list.length : 0} 筆`;
+      result.className = 'settings-conn-result ok';
+    } catch (e) {
+      if (e instanceof UnauthorizedError) {
+        result.textContent = '網址正確，但存取密鑰不符';
+      } else {
+        result.textContent = '連不上這個網址，請確認是否為 /exec 結尾且已部署';
+      }
+      result.className = 'settings-conn-result error';
+    } finally {
+      if (prevUrl === null) localStorage.removeItem(PROXY_URL_KEY);
+      else localStorage.setItem(PROXY_URL_KEY, prevUrl);
+      if (prevSecret === null) localStorage.removeItem(PROXY_SECRET_KEY);
+      else localStorage.setItem(PROXY_SECRET_KEY, prevSecret);
+    }
+  });
+
   // Save
-  $('#saveSettings').addEventListener('click', () => {
+  $('#saveSettings').addEventListener('click', async () => {
+    // 後端設定
+    const url = $('#sheetUrlInput').value.trim();
+    const secret = $('#appSecretInput').value.trim();
+    const urlChanged = url !== getNotionProxyUrl() || secret !== getAppSecret();
+    if (url) localStorage.setItem(PROXY_URL_KEY, url);
+    else localStorage.removeItem(PROXY_URL_KEY);
+    if (secret) localStorage.setItem(PROXY_SECRET_KEY, secret);
+    else localStorage.removeItem(PROXY_SECRET_KEY);
+
     // Save Theme Configuration（保留 preset 的文字色等額外屬性）
     const existingSaved = (() => {
       try { return JSON.parse(localStorage.getItem('crystal_learning_theme') || '{}'); } catch(e) { return {}; }
@@ -2748,43 +3520,11 @@ function initSettings() {
     saveTheme(currentTheme);
     modal.classList.remove('active');
     showToast('設定已儲存');
-  });
 
-  // 以本機覆寫雲端：單向上傳、會蓋掉雲端現有內容，先跳二次確認
-  const overwriteModal = $('#overwriteCloudModal');
-
-  $('#syncNowBtn').addEventListener('click', () => {
-    modal.classList.remove('active');
-    $('#overwriteCardCount').textContent = cards.length;
-    overwriteModal.classList.add('active');
-  });
-
-  // 取消就退回設定，不要讓使用者莫名回到主畫面
-  const cancelOverwrite = () => {
-    overwriteModal.classList.remove('active');
-    modal.classList.add('active');
-  };
-  $('#cancelOverwriteCloud').addEventListener('click', cancelOverwrite);
-  overwriteModal.addEventListener('click', (e) => {
-    if (e.target === overwriteModal) cancelOverwrite();
-  });
-
-  $('#confirmOverwriteCloud').addEventListener('click', async () => {
-    overwriteModal.classList.remove('active');
-    showLoading('正在用本機資料覆寫雲端...');
-
-    try {
-      updateSyncStatus('syncing');
-      await NotionAPI.syncAll(cards);
-      updateSyncStatus('connected');
-      lastSyncAt = Date.now(); // 剛推完，雲端就是本機，不必馬上再拉一次
-      showToast(`已用本機 ${cards.length} 張卡片覆寫雲端`);
-    } catch (e) {
-      console.error('Overwrite cloud failed:', e);
-      updateSyncStatus('error');
-      showToast('覆寫失敗，請檢查連線');
-    } finally {
-      hideLoading();
+    // 剛接上（或換了）後端就立刻拉一次，不必等使用者自己去按更新
+    if (urlChanged && url) {
+      lastSyncAt = 0;
+      syncFromNotion();
     }
   });
 
@@ -3193,12 +3933,11 @@ let driveProxyUnavailable = false;
 async function fetchDriveBlobUrlViaProxy(fileId) {
   if (driveBlobCache[fileId]) return driveBlobCache[fileId];
   if (driveProxyUnavailable) throw new Error('後端無 getAudio 端點');
-  const proxy = getNotionProxyUrl();
-  if (!proxy) throw new Error('尚未設定後端 Proxy URL');
+  const audioUrl = proxyGetUrl({ action: 'getAudio', fileId });
+  if (!audioUrl) throw new Error('尚未設定後端 Proxy URL');
 
-  const sep = proxy.includes('?') ? '&' : '?';
   // Apps Script 本身回應就要 2~3 秒，再加 base64 編碼，逾時不能設太短
-  const res = await fetchWithTimeout(`${proxy}${sep}action=getAudio&fileId=${encodeURIComponent(fileId)}`, {}, 12000);
+  const res = await fetchWithTimeout(audioUrl, {}, 12000);
   const json = await res.json();
   // 後端還是舊版時會忽略 action、回傳整包卡片，用有沒有 base64 判斷
   if (!json.success) throw new Error(json.error || 'getAudio failed');
@@ -3377,17 +4116,13 @@ async function runOCR(imageFile, _lang) {
 
     wordList.innerHTML = `<span style="display:inline-flex;align-items:center;gap:0.35rem;color:var(--text-muted);font-size:0.85rem"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Google Vision 辨識中...</span>`;
 
-    const res = await fetch(proxyUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({
-        action: 'ocrImage',
-        base64Data: compressed.base64,
-        mimeType: compressed.mimeType,
-      }),
+    const json = await proxyPost({
+      action: 'ocrImage',
+      base64Data: compressed.base64,
+      mimeType: compressed.mimeType,
     });
-    const json = await res.json();
 
+    throwIfUnauthorized(json);
     if (!json.success) {
       throw new Error(json.error || 'OCR 失敗');
     }
@@ -3503,18 +4238,13 @@ async function uploadImageToDrive(file, lang, statusEl) {
     statusEl.textContent = '上傳中，請稍候...';
   }
   try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({
-        action: 'uploadImage',
-        base64Data: compressed.base64,
-        filename: `img_${Date.now()}.jpg`,
-        mimeType: compressed.mimeType,
-        lang: lang || 'other',
-      }),
+    const json = await proxyPost({
+      action: 'uploadImage',
+      base64Data: compressed.base64,
+      filename: `img_${Date.now()}.jpg`,
+      mimeType: compressed.mimeType,
+      lang: lang || 'other',
     });
-    const json = await res.json();
     if (json.success) {
       if (statusEl) {
         statusEl.className = 'audio-status success';

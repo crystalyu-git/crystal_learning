@@ -16,7 +16,14 @@
 //    - Execute as: "Me"
 //    - Who has access: "Anyone"
 // 6. 點選 Deploy，複製產生的 URL
-// 7. 將 URL 貼到 Crystal Learning 的設定中
+// 7. 專案設定 → 指令碼屬性，新增 APP_SECRET（自訂一組長亂碼）
+// 8. 將 URL 與 APP_SECRET 貼到 Crystal Learning 的設定頁
+// =============================================
+//
+// ⚠️ 關於存取控制
+// 部署必須是 "Anyone"（前端是靜態頁，無法做 Google OAuth），所以網址等同一組
+// 公開端點。真正的防線是 APP_SECRET：來自 App 的請求一律要帶對 token 才受理。
+// 網址本身不具機密性，不要當成秘密來管理——它遲早會出現在瀏覽器歷史或紀錄裡。
 // =============================================
 
 const SHEET_NAME = '字庫'; // 你的工作表名稱
@@ -26,9 +33,25 @@ function getSheet() {
     return SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
 }
 
+// 驗證來自 App 的請求。與 Telegram webhook 的 TELEGRAM_WEBHOOK_SECRET 是兩套獨立密鑰，
+// Telegram 不可能帶我們的 token，所以那條路徑不走這裡（見 doPost）
+function checkAppSecret(token) {
+    const expected = PropertiesService.getScriptProperties().getProperty('APP_SECRET');
+    if (!expected) return false; // 沒設定就一律拒絕，避免忘了設而全開
+    return token === expected;
+}
+
+function unauthorizedResponse() {
+    return jsonResponse({ success: false, error: 'Unauthorized', code: 401 });
+}
+
 // 處理 GET 請求 — 讀取所有卡片；action=getAudio 時改回傳單一音檔的 base64
 function doGet(e) {
     try {
+        if (!checkAppSecret(e && e.parameter ? e.parameter.token : null)) {
+            return unauthorizedResponse();
+        }
+
         if (e && e.parameter && e.parameter.action === 'getAudio') {
             return getAudioBase64(e.parameter.fileId);
         }
@@ -68,7 +91,12 @@ function doPost(e) {
     try {
         const body = JSON.parse(e.postData.contents);
 
+        // 帶 action 的都是 App 送來的，一律驗證。Telegram webhook 沒有 action，
+        // 走下面 update_id / message 的分支，用它自己的 TELEGRAM_WEBHOOK_SECRET 驗證
         if (body.action) {
+            if (!checkAppSecret(body.token)) {
+                return unauthorizedResponse();
+            }
             switch (body.action) {
                 case 'save':
                     return saveCard(body.card);
