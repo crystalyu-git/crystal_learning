@@ -3280,6 +3280,11 @@ select.form-input {
   word-break: break-word;
 }
 
+/* 集合A的內容比非A暗一點，但仍比欄位標題亮 */
+.belief-field-text.is-belief {
+  opacity: 0.42;
+}
+
 .belief-field-text.placeholder {
   color: var(--text-muted);
   font-style: italic;

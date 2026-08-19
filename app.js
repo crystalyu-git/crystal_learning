@@ -2210,7 +2210,7 @@ function beliefItemHtml(item, { showDate = false } = {}) {
     </div>
     <div class="belief-field">
       <span class="belief-field-label">集合A</span>
-      <div class="belief-field-text">${beliefTextHtml(item.belief)}</div>
+      <div class="belief-field-text is-belief">${beliefTextHtml(item.belief)}</div>
     </div>
     <div class="belief-field">
       <span class="belief-field-label">非A</span>
