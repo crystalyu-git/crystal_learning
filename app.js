@@ -811,6 +811,11 @@ const BELIEF_SALT_KEY = 'crystal_belief_salt';
 const BELIEF_VERIFIER_KEY = 'crystal_belief_verifier';
 const BELIEF_VERIFIER_TEXT = 'crystal-belief-ok';
 const PBKDF2_ITERATIONS = 150000;
+// salt 與 verifier 會跟密文一起放進雲端（見 pushBeliefKeyCard），所以任何拿到那份
+// 資料的人都能離線暴力破解——沒有 rate limit，只受 PBKDF2 迭代次數拖慢。
+// 150k 迭代在 GPU 上仍有每秒數十萬次的量級，6 碼英數（約 2×10^9 組合）幾小時就掃完，
+// 因此最低長度必須靠字數把搜尋空間拉開，而不是靠迭代次數
+const BELIEF_MIN_PASS_LENGTH = 12;
 
 let beliefKey = null; // 解鎖後快取的 CryptoKey，只存在記憶體
 let beliefPushTimer = null;
@@ -2339,7 +2344,7 @@ function renderBeliefView() {
     $('#beliefLockTitle').textContent = existing ? '輸入加密密碼' : '設定加密密碼';
     $('#beliefLockDesc').textContent = existing
       ? '這台裝置還沒解鎖過。輸入你當初設定的密碼即可讀取內容。'
-      : '所有內容會在這台裝置上加密後才儲存與上傳，雲端看到的是一串亂碼。';
+      : `所有內容會在這台裝置上加密後才儲存與上傳，雲端看到的是一串亂碼。密碼至少 ${BELIEF_MIN_PASS_LENGTH} 個字，建議用一句只有你想得到的話。`;
     $('#beliefLockWarn').textContent = existing
       ? ''
       : '密碼只存在你自己的裝置，沒有任何還原後門——忘記就再也解不開了。';
@@ -2417,8 +2422,8 @@ function initBelief() {
     if (!pass) return;
 
     if (!hasBeliefVault()) {
-      if (pass.length < 6) {
-        warn.textContent = '密碼至少 6 個字，太短容易被猜到。';
+      if (pass.length < BELIEF_MIN_PASS_LENGTH) {
+        warn.textContent = `密碼至少 ${BELIEF_MIN_PASS_LENGTH} 個字。`;
         return;
       }
       if (pass !== $('#beliefPassConfirm').value) {
@@ -4124,13 +4129,6 @@ const MYMEMORY_LANG_MAP = {
   'en-US': 'en', 'en-GB': 'en', 'ja-JP': 'ja', 'zh-TW': 'zh-TW',
   'ko-KR': 'ko', 'fr-FR': 'fr', 'de-DE': 'de', 'es-ES': 'es',
   'it-IT': 'it', 'pt-BR': 'pt', 'th-TH': 'th', 'vi-VN': 'vi',
-};
-
-// Map card lang to Tesseract language code
-const TESSERACT_LANG_MAP = {
-  'en-US': 'eng', 'en-GB': 'eng', 'ja-JP': 'jpn', 'zh-TW': 'chi_tra',
-  'ko-KR': 'kor', 'fr-FR': 'fra', 'de-DE': 'deu', 'es-ES': 'spa',
-  'it-IT': 'ita', 'pt-BR': 'por', 'th-TH': 'tha', 'vi-VN': 'vie',
 };
 
 async function autoTranslate(word, fromLang, statusEl) {

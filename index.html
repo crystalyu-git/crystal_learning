@@ -8,12 +8,31 @@
     <title>Crystal Learning — 間隔重複學習系統</title>
     <link rel="icon" type="image/svg+xml"
         href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 28'%3E%3Cpath d='M14 2L2 8L14 14L26 8L14 2Z' stroke='%236366f1' stroke-width='2' fill='none'/%3E%3Cpath d='M2 20L14 26L26 20' stroke='%236366f1' stroke-width='2' fill='none'/%3E%3Cpath d='M2 14L14 20L26 14' stroke='%236366f1' stroke-width='2' fill='none'/%3E%3C/svg%3E">
+    <!-- CSP：把「可以載入外部資源的來源」鎖成白名單。主要擋的是供應鏈攻擊——
+         就算日後有人塞進一支第三方 script tag，非白名單來源一律載不起來。
+         注意：connect-src 寫死了 Apps Script 的網域，若之後把後端換到別的 host，
+         這裡也要一起加，否則同步會靜默失敗。
+         script/style 保留 unsafe-inline 是因為專案沒有 build step：index.html 有主題
+         早期初始化的 inline script，畫面各處也大量用 innerHTML 帶 style 屬性。 -->
+    <meta http-equiv="Content-Security-Policy" content="
+        default-src 'self';
+        script-src 'self' 'unsafe-inline' https://www.youtube.com https://s.ytimg.com;
+        style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+        font-src 'self' data: https://fonts.gstatic.com;
+        img-src 'self' data: blob: https://lh3.googleusercontent.com https://drive.google.com https://drive.usercontent.google.com https://i.ytimg.com;
+        media-src 'self' data: blob: https://drive.usercontent.google.com https://drive.google.com;
+        connect-src 'self' https://script.google.com https://script.googleusercontent.com https://drive.usercontent.google.com https://api.mymemory.translated.net https://translate.googleapis.com;
+        frame-src https://www.youtube.com https://www.youtube-nocookie.com;
+        object-src 'none';
+        base-uri 'self';
+        form-action 'self';
+    ">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;700&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=1.66">
+    <link rel="stylesheet" href="styles.css?v=1.67">
     <!-- 主題早期初始化：防止 Safari 快取舊 app.js 導致閃白 -->
     <script>
     (function() {
@@ -1142,9 +1161,11 @@
         <span class="loading-text" id="loadingText">同步中...</span>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-    <script src="https://unpkg.com/wanakana@5.3.1/wanakana.min.js"></script>
-    <script src="app.js?v=1.66"></script>
+    <!-- wanakana 改為本地檔案：原本從 unpkg 載，第三方 CDN 或該套件被接管就能在本站
+         同源執行任意程式碼、直接讀走 localStorage 裡的資料。tesseract.js 全專案 0 次
+         呼叫（OCR 走後端 Google Vision），一併移除 -->
+    <script src="vendor/wanakana-5.3.1.min.js?v=1.67"></script>
+    <script src="app.js?v=1.67"></script>
 
     <!-- OCR Result Overlay -->
     <div id="ocrOverlay"
