@@ -1720,6 +1720,11 @@ function isCardChecked(cardId, dateKey) {
   return !!(cardChecks[cardId] && cardChecks[cardId][dateKey]);
 }
 
+// 累計打卡次數：從新增到現在打過的總天數（取消打卡會把該日 key 刪掉，所以直接數 key 就是總次數）
+function cardCheckTotal(cardId) {
+  return cardChecks[cardId] ? Object.keys(cardChecks[cardId]).length : 0;
+}
+
 // 本月最高連續打卡天數：只看當月 1 日到月底，下個月重新計算會自動歸 0。
 // isCheckedFn(dateKey) 回傳該日是否打卡，供習慣與卡片共用。
 function currentMonthMaxStreak(isCheckedFn) {
@@ -1870,6 +1875,11 @@ function toggleCardCheck(cardId) {
   saveCardChecksToLocal();
 
   syncLangHabitFromCard(card, isNowChecked, key);
+
+  // 只更新該張卡的累計數字，避免整個知識庫重繪把捲軸位置與展開狀態洗掉
+  document.querySelectorAll(`.checkin-total-badge[data-id="${cardId}"]`).forEach(el => {
+    el.textContent = cardCheckTotal(cardId);
+  });
 
   markHabitsUpdated();
   if ($('#habitView')?.classList.contains('active')) renderHabitTracker();
@@ -3117,10 +3127,13 @@ function renderLibrary() {
           </div>
         </div>
         <div class="library-card-checkin">
-          <label class="checkin-label" title="打勾即完成今日打卡，每日 00:00 (+8) 更新">
-            <input type="checkbox" class="card-checkin-box" data-id="${card.id}" ${isCardChecked(card.id, checkinTodayKey) ? 'checked' : ''}>
-            <span>今日打卡</span>
-          </label>
+          <div class="checkin-left">
+            <label class="checkin-label" title="打勾即完成今日打卡，每日 00:00 (+8) 更新">
+              <input type="checkbox" class="card-checkin-box" data-id="${card.id}" ${isCardChecked(card.id, checkinTodayKey) ? 'checked' : ''}>
+              <span>今日打卡</span>
+            </label>
+            <span class="checkin-total-badge" data-id="${card.id}" title="累計打卡次數">${cardCheckTotal(card.id)}</span>
+          </div>
           <button type="button" class="card-record-btn" data-id="${card.id}" title="查看打卡紀錄">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="10" x2="21" y2="10"/><path d="M8 2v4M16 2v4"/></svg>
             打卡紀錄
