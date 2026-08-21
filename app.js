@@ -1580,7 +1580,13 @@ function switchView(viewName) {
   if (viewName === 'review') startReviewSession();
   if (viewName === 'library') renderLibrary();
   if (viewName === 'habit') renderHabitTracker({ anchorToday: true });
-  if (viewName === 'belief') renderBeliefView();
+  if (viewName === 'belief') {
+    // 每次進分頁都回到預設的「待補非A」，開頁就直接看到還沒轉的那幾則
+    setBeliefFilter('pending');
+    const search = $('#beliefSearch');
+    if (search) search.value = '';
+    renderBeliefView();
+  }
 }
 
 // ── Date Display ──
@@ -2189,7 +2195,7 @@ function initHabitTracker() {
 
 /* ── 集合A／非A 日記 UI ── */
 
-let beliefFilter = 'all'; // 'all' | 'pending'
+let beliefFilter = 'pending'; // 'all' | 'pending'；進分頁預設停在「待補非A」
 let beliefEditingId = null; // 正在編輯的集合A id，null 代表新增
 
 function formatBeliefDate(dateKey) {
@@ -2298,6 +2304,12 @@ function renderBeliefModalBody({ showForm = false } = {}) {
 }
 
 // ── 分頁 ──
+
+// 切換篩選：變數與 chip 的 active 樣式一起改，避免兩邊對不上
+function setBeliefFilter(filter) {
+  beliefFilter = filter;
+  $$('.belief-chip').forEach(c => c.classList.toggle('active', c.dataset.filter === filter));
+}
 
 function renderBeliefView() {
   const lockPanel = $('#beliefLockPanel');
@@ -2444,8 +2456,7 @@ function initBelief() {
   $('#beliefSearch').addEventListener('input', () => renderBeliefView());
   $$('.belief-chip').forEach(chip => {
     chip.addEventListener('click', () => {
-      beliefFilter = chip.dataset.filter;
-      $$('.belief-chip').forEach(c => c.classList.toggle('active', c === chip));
+      setBeliefFilter(chip.dataset.filter);
       renderBeliefView();
     });
   });
