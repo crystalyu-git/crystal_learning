@@ -324,6 +324,126 @@ function extractYouTubeId(url) {
   return (match && match[2].length === 11) ? match[2] : null;
 }
 
+// ── 音源起始時間 ──
+// 起始秒數不另外開 card 欄位，直接寫進 audioUrl 的 t 參數：
+// 後端 Sheets 的欄位是寫死的 A~L，多一欄兩支 backend 都要改再重新部署。
+// YouTube 用 query 的 ?t=90s（它原生就吃這個參數，開新分頁會跳到指定秒數，
+// 也順便相容從 YouTube「複製當前時間網址」貼進來的連結）；
+// Drive／直接音檔則用 hash 的 #t=90，hash 不會送到伺服器，
+// 不會弄壞 Drive 網址或帶簽章的檔案連結，而且瀏覽器本來就認得這個 media fragment
+function parseTimeToSeconds(str) {
+  const s = String(str || '').trim();
+  if (!s) return null;
+  // 1:30 / 1:02:03
+  if (/^\d+(:\d{1,2}){1,2}$/.test(s)) {
+    return s.split(':').reduce((acc, part) => acc * 60 + Number(part), 0);
+  }
+  // 90 / 90s
+  if (/^\d+s?$/i.test(s)) return Number(s.replace(/s$/i, ''));
+  // 1h2m3s / 2m30s
+  const m = s.match(/^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/i);
+  if (m && (m[1] || m[2] || m[3])) return (+m[1] || 0) * 3600 + (+m[2] || 0) * 60 + (+m[3] || 0);
+  return null;
+}
+
+function formatSecondsAsTime(sec) {
+  const total = Math.max(0, Math.floor(Number(sec) || 0));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const ss = total % 60;
+  const pad = n => String(n).padStart(2, '0');
+  return h > 0 ? `${h}:${pad(m)}:${pad(ss)}` : `${m}:${pad(ss)}`;
+}
+
+function getAudioStartSeconds(url) {
+  const m = String(url || '').match(/[?&#](?:t|start)=([^&#]+)/);
+  return m ? parseTimeToSeconds(decodeURIComponent(m[1])) : null;
+}
+
+// 起始時間只對「我們自己播」或 YouTube 能跳秒數的音源有意義；
+// 其他不認得的連結一律是開新分頁，設了也不會生效，就不要給欄位讓人誤會
+function isSeekableAudioSource(url) {
+  const raw = String(url || '').trim();
+  if (!raw) return false;
+  return !!extractYouTubeId(raw)
+    || /drive\.google\.com|docs\.google\.com/.test(raw)
+    || isDirectAudioFile(raw);
+}
+
+// 副檔名後面可能還接著 ?t= 或 #t=，不能只認結尾
+function isDirectAudioFile(url) {
+  return /\.(mp3|wav|ogg|m4a|aac)(?:[?#]|$)/i.test(String(url || ''));
+}
+
+// 回傳把起始秒數換成 seconds 的網址；seconds 為 0／null 就是把時間參數整個拿掉
+function withAudioStart(url, seconds) {
+  const raw = String(url || '').trim();
+  if (!raw) return raw;
+  const isYouTube = !!extractYouTubeId(raw);
+
+  const hashIdx = raw.indexOf('#');
+  const hash = hashIdx >= 0 ? raw.slice(hashIdx + 1) : '';
+  const noHash = hashIdx >= 0 ? raw.slice(0, hashIdx) : raw;
+  const qIdx = noHash.indexOf('?');
+  const base = qIdx >= 0 ? noHash.slice(0, qIdx) : noHash;
+
+  const dropTime = part => part && !/^(?:t|start)=/i.test(part);
+  // query 與 hash 的舊時間參數都要清掉，不然同一條網址會掛兩個時間、只有其中一個會生效
+  const params = (qIdx >= 0 ? noHash.slice(qIdx + 1) : '').split('&').filter(dropTime);
+  const hashParts = hash.split('&').filter(dropTime);
+
+  if (seconds > 0) {
+    if (isYouTube) params.push(`t=${seconds}s`);
+    else hashParts.push(`t=${seconds}`);
+  }
+  return base
+    + (params.length ? '?' + params.join('&') : '')
+    + (hashParts.length ? '#' + hashParts.join('&') : '');
+}
+
+// 起始時間欄位只在音源真的能跳秒數時出現（YouTube／Drive／直接音檔）
+function bindAudioStartField(urlInputId, startInputId, rowId) {
+  const urlInput = $(`#${urlInputId}`);
+  const startInput = $(`#${startInputId}`);
+  const row = $(`#${rowId}`);
+  if (!urlInput || !startInput || !row) return;
+
+  const syncFromUrl = () => {
+    const url = urlInput.value.trim();
+    const seekable = isSeekableAudioSource(url);
+    row.style.display = seekable ? '' : 'none';
+    startInput.classList.remove('is-invalid');
+    if (!seekable) { startInput.value = ''; return; }
+    const sec = getAudioStartSeconds(url);
+    startInput.value = sec ? formatSecondsAsTime(sec) : '';
+  };
+
+  const applyToUrl = () => {
+    const url = urlInput.value.trim();
+    if (!isSeekableAudioSource(url)) return;
+    const raw = startInput.value.trim();
+    const sec = raw ? parseTimeToSeconds(raw) : 0;
+    if (raw && sec === null) {
+      // 看不懂的格式就整條保持原狀，不要靜默寫成 0 秒讓使用者以為設定成功
+      startInput.classList.add('is-invalid');
+      showToast('時間格式看不懂，請輸入像 1:30 或 90');
+      return;
+    }
+    startInput.classList.remove('is-invalid');
+    urlInput.value = withAudioStart(url, sec || 0);
+    startInput.value = sec ? formatSecondsAsTime(sec) : '';
+  };
+
+  urlInput.addEventListener('input', syncFromUrl);
+  urlInput.addEventListener('change', syncFromUrl);
+  startInput.addEventListener('input', () => startInput.classList.remove('is-invalid'));
+  startInput.addEventListener('change', applyToUrl);
+  startInput.addEventListener('blur', applyToUrl);
+
+  // 程式改動網址時（上傳音檔、開編輯視窗、清空表單）不會觸發 input 事件，要手動叫一次
+  urlInput._syncAudioStart = syncFromUrl;
+}
+
 // ── Auth ──
 function isAuthenticated() {
   return localStorage.getItem(AUTH_KEY) === '1';
@@ -2633,6 +2753,7 @@ function clearAddForm() {
   // Also clear status texts
   const addStatus = $('#addAudioStatus');
   if (addStatus) { addStatus.style.display = 'none'; addStatus.textContent = ''; }
+  $('#inputAudioUrl')._syncAudioStart?.();
 
   const translateStatus = $('#translateStatus');
   if (translateStatus) { translateStatus.style.display = 'none'; translateStatus.textContent = ''; }
@@ -3238,6 +3359,7 @@ function openEditModal(id) {
   // Use tag-input to populate category chips
   _editTagInput?.setTags(card.category || '');
   $('#editAudioUrl').value = card.audioUrl || '';
+  $('#editAudioUrl')._syncAudioStart?.();
   setLangValue('editLang', getLangLabel(card.lang) || card.lang || '');
   // Populate imageUrl hidden field
   $('#editImageUrl').value = card.imageUrl || '';
@@ -3821,7 +3943,7 @@ function playOrSpeak(card, defaultText, lang, btnElement) {
       return;
     }
 
-    if (card.audioUrl.match(/\.(mp3|wav|ogg|m4a|aac)$/i)) {
+    if (isDirectAudioFile(card.audioUrl)) {
       playDirectAudio(card.audioUrl, btnElement, () => {
         if (langCode) speakText(defaultText, langCode, btnElement);
       });
@@ -3852,6 +3974,7 @@ async function uploadAudioToDrive(blob, filename, lang, statusEl, targetInput) {
 
     const shareUrl = await NotionAPI.uploadAudio(base64Data, filename, blob.type, lang);
     targetInput.value = shareUrl;
+    targetInput._syncAudioStart?.();
     statusEl.className = 'audio-status success';
     statusEl.textContent = `音檔上傳成功！(${lang || 'other'})`;
     showToast('音檔上傳成功！');
@@ -3935,6 +4058,9 @@ function initAudioActions() {
 
   bindAudioButtons('addUploadAudioBtn', 'addRecordAudioBtn', 'addAudioFileInput', 'addAudioStatus', 'inputAudioUrl', 'inputLang');
   bindAudioButtons('editUploadAudioBtn', 'editRecordAudioBtn', 'editAudioFileInput', 'editAudioStatus', 'editAudioUrl', 'editLang');
+
+  bindAudioStartField('inputAudioUrl', 'inputAudioStart', 'addAudioStartRow');
+  bindAudioStartField('editAudioUrl', 'editAudioStart', 'editAudioStartRow');
 }
 
 // Global audio object to prevent overlapping playback
@@ -3949,12 +4075,25 @@ const DRIVE_FAIL_TTL = 60 * 1000;
 
 // 在共用的 audio 元素上播放；resolve = 真的開始播了，reject = 這個來源不能用
 // 重點：play() 要在同一個 tick 內叫，中間不能 await，否則 iOS 會判定脫離使用者手勢
-function playOnSharedAudio(src, btnElement, timeoutMs = 2000) {
+function playOnSharedAudio(src, btnElement, timeoutMs = 2000, startSeconds = 0) {
   return new Promise((resolve, reject) => {
     const audio = getSharedAudio();
     audio.onended = null;
     audio.onerror = null;
+    audio.onloadedmetadata = null;
     try { audio.pause(); } catch (e) { }
+
+    // 跳到指定秒數。metadata 還沒載完時設 currentTime 會失敗，
+    // 所以 loadedmetadata 和 play() 成功後各叫一次，先到的那次生效、另一次會被下面的 guard 擋掉
+    const seek = () => {
+      if (!startSeconds) return;
+      try {
+        // 起始時間超過音檔長度就當作沒設，不然按下去等於立刻結束、聽起來像壞掉
+        if (audio.duration && startSeconds >= audio.duration) return;
+        if (Math.abs(audio.currentTime - startSeconds) < 0.5) return;
+        audio.currentTime = startSeconds;
+      } catch (e) { }
+    };
 
     let settled = false;
     let timer = null;
@@ -3969,6 +4108,7 @@ function playOnSharedAudio(src, btnElement, timeoutMs = 2000) {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      seek();
       currentAudio = audio;
       if (btnElement) btnElement.classList.add('speaking');
       audio.onended = () => { if (btnElement) btnElement.classList.remove('speaking'); };
@@ -3978,6 +4118,7 @@ function playOnSharedAudio(src, btnElement, timeoutMs = 2000) {
 
     timer = setTimeout(() => fail(new Error('timeout')), timeoutMs);
     audio.onerror = () => fail(audio.error);
+    audio.onloadedmetadata = seek;
     audio.src = src;
     try {
       const p = audio.play();
@@ -4052,6 +4193,8 @@ async function playGoogleDriveAudio(url, btnElement, onErrorCallback) {
   }
 
   const fileId = fileIdMatch[1];
+  // 起始秒數寫在卡片網址的 hash 上，但真正播的是 blob／download 網址，要自己帶過去
+  const startSeconds = getAudioStartSeconds(url) || 0;
 
   // 這個檔案剛剛才全部試過失敗，不用再讓使用者等一輪，直接退回系統發音
   const failedAt = driveFailCache[fileId];
@@ -4065,7 +4208,7 @@ async function playGoogleDriveAudio(url, btnElement, onErrorCallback) {
   // 抓過就直接播，不再連網
   if (driveBlobCache[fileId]) {
     try {
-      await playOnSharedAudio(driveBlobCache[fileId], btnElement);
+      await playOnSharedAudio(driveBlobCache[fileId], btnElement, 2000, startSeconds);
       return;
     } catch (err) {
       console.warn('Cached blob playback failed:', err);
@@ -4083,7 +4226,7 @@ async function playGoogleDriveAudio(url, btnElement, onErrorCallback) {
   for (const [name, getBlobUrl] of strategies) {
     try {
       const blobUrl = await getBlobUrl();
-      await playOnSharedAudio(blobUrl, btnElement, 4000);
+      await playOnSharedAudio(blobUrl, btnElement, 4000, startSeconds);
       return; // Success
     } catch (err) {
       console.warn(`${name} failed:`, err);
@@ -4094,7 +4237,7 @@ async function playGoogleDriveAudio(url, btnElement, onErrorCallback) {
   // 最後才試直連 <audio src>：CORP 會擋掉的就是這條，但 Chrome 之類寬鬆的瀏覽器還是能播
   // 只試最終供檔網址就好，drive.google.com/uc 只是 303 轉到同一個位置，試兩次是白等
   try {
-    await playOnSharedAudio(driveDownloadUrl(fileId), btnElement);
+    await playOnSharedAudio(driveDownloadUrl(fileId), btnElement, 2000, startSeconds);
     return;
   } catch (err) {
     console.warn('Direct playback failed:', err);
@@ -4115,7 +4258,7 @@ async function playGoogleDriveAudio(url, btnElement, onErrorCallback) {
 }
 
 function playDirectAudio(url, btnElement, onErrorCallback) {
-  playOnSharedAudio(url, btnElement).catch(e => {
+  playOnSharedAudio(url, btnElement, 2000, getAudioStartSeconds(url) || 0).catch(e => {
     console.warn('Audio play blocked or failed:', e);
     if (btnElement) btnElement.classList.remove('speaking');
     if (onErrorCallback) onErrorCallback();

@@ -2537,6 +2537,32 @@ select.form-input {
   }
 }
 
+/* ── YouTube 起始時間 ── */
+.audio-start-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+}
+
+.audio-start-label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.audio-start-input {
+  width: 7rem;
+  flex-shrink: 0;
+  padding-top: 0.45rem;
+  padding-bottom: 0.45rem;
+  font-size: 0.85rem;
+}
+
+.audio-start-input.is-invalid {
+  border-color: var(--accent-danger);
+}
+
 .audio-status {
   margin-top: 0.4rem;
   font-size: 0.78rem;
