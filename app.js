@@ -4628,14 +4628,9 @@ function initSmartInput() {
     inputLang.addEventListener('change', toggleAddHiraganaBtn);
     toggleAddHiraganaBtn(); // init
 
-    autoHiraganaBtn.addEventListener('click', async () => {
-      const word = $('#inputWord').value.trim();
-      if (!word) { showToast('請先填寫生字'); return; }
-      autoHiraganaBtn.textContent = '轉換中...';
-      const hiragana = await fetchHiragana(word);
-      if (hiragana) $('#inputPronunciation').value = hiragana;
-      autoHiraganaBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg> 轉平假名`;
-    });
+    autoHiraganaBtn.addEventListener('click', () =>
+      runHiraganaConversion(autoHiraganaBtn, $('#inputWord'), $('#inputPronunciation'))
+    );
   }
 
   // ─ Auto Hiragana button (Edit modal) ─
@@ -4649,14 +4644,9 @@ function initSmartInput() {
     editLang.addEventListener('change', toggleEditHiraganaBtn);
     toggleEditHiraganaBtn(); // init
 
-    editAutoHiraganaBtn.addEventListener('click', async () => {
-      const word = $('#editWord').value.trim();
-      if (!word) { showToast('請先填寫生字'); return; }
-      editAutoHiraganaBtn.textContent = '轉換中...';
-      const hiragana = await fetchHiragana(word);
-      if (hiragana) $('#editPronunciation').value = hiragana;
-      editAutoHiraganaBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg> 轉平假名`;
-    });
+    editAutoHiraganaBtn.addEventListener('click', () =>
+      runHiraganaConversion(editAutoHiraganaBtn, $('#editWord'), $('#editPronunciation'))
+    );
   }
 
   // ─ Photo / OCR button (Add form - for word) ─
@@ -4723,10 +4713,19 @@ function initSmartInput() {
   );
 }
 
+// 假名、長音符、數字與基本標點（「3時」這種轉完會是「3じ」，不能當成失敗）
+const KANA_ONLY_RE = /^[\u3040-\u30FF0-9０-９、。，・\s]+$/;
+
+// 回傳 { ok: true, hiragana } 或 { ok: false, reason }。
+// reason='service' 是拿不到羅馬字（對外 API 掛掉、被限流、回非 JSON），
+// reason='unconvertible' 是拿到了但轉不成假名。
+// 兩種都絕不能把值寫回發音欄：舊寫法失敗時 return text，呼叫端又照單全收，
+// 結果是發音欄被填上一模一樣的漢字且沒任何提示，看起來就像「按了沒反應」。
 async function fetchHiragana(text) {
   try {
     const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=ja&tl=ja&dt=rm&q=${encodeURIComponent(text)}`;
     const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     let romaji = '';
     if (data && data[0]) {
@@ -4734,7 +4733,7 @@ async function fetchHiragana(text) {
         if (segment[3]) romaji += segment[3] + ' ';
       });
     }
-    if (!romaji) return text; // fallback
+    if (!romaji) return { ok: false, reason: 'service' };
     // remove spaces completely since Japanese doesn't use spaces generally
     romaji = romaji.replace(/\s+/g, '').trim();
 
@@ -4745,12 +4744,35 @@ async function fetchHiragana(text) {
       .replace(/[ēĒ]/g, 'ee')
       .replace(/[ōŌ]/g, 'ou');
 
-    if (window.wanakana) {
-      return wanakana.toHiragana(romaji);
-    }
-    return romaji; // return romaji if wanakana fails to load
+    if (!window.wanakana) return { ok: false, reason: 'service' };
+
+    // wanakana 是整串驗證：只要有一個不是合法羅馬字的字元（例如非日文漢字被改用拼音音譯、帶聲調符號的 à），
+    // 它會把整串原樣吐回而不是只跳過那個字，所以這裡要再確認一次結果真的是假名。
+    const hiragana = wanakana.toHiragana(romaji);
+    if (!KANA_ONLY_RE.test(hiragana)) return { ok: false, reason: 'unconvertible' };
+    return { ok: true, hiragana };
   } catch (e) {
     console.error('Hiragana fetched failed:', e);
-    return text;
+    return { ok: false, reason: 'service' };
+  }
+}
+
+// 新增與編輯兩張表單的轉換流程一模一樣，包含失敗提示，所以抽出來共用。
+// 按鈕文字先存再還原，不把圖示的 SVG 再抄一份在這裡。
+async function runHiraganaConversion(btn, wordEl, pronunciationEl) {
+  const word = wordEl.value.trim();
+  if (!word) { showToast('請先填寫生字'); return; }
+  const label = btn.innerHTML;
+  btn.disabled = true;
+  btn.textContent = '轉換中...';
+  const result = await fetchHiragana(word);
+  btn.disabled = false;
+  btn.innerHTML = label;
+  if (result.ok) {
+    pronunciationEl.value = result.hiragana;
+  } else if (result.reason === 'unconvertible') {
+    showToast('這個字轉不出假名，請手動填寫');
+  } else {
+    showToast('讀音服務暫時無法使用，請手動填寫');
   }
 }
