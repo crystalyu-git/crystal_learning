@@ -4161,14 +4161,28 @@ async function fetchDriveBlobUrl(fileId) {
   if (driveBlobCache[fileId]) return driveBlobCache[fileId];
   // 這條要把整個音檔下載完才算成功，原本 3 秒是照「連不上就快點放棄」抓的，
   // 但幾 MB 的音檔在手機網路上本來就要好幾秒，等於網路一慢就一定失敗、退回開新分頁
-  const res = await fetchWithTimeout(driveDownloadUrl(fileId), { mode: 'cors', credentials: 'omit' }, 8000);
-  // credentials: 'omit'，所以檔案一定要開放「知道連結的任何人」才讀得到，
-  // 沒開放時 Drive 回的是登入頁而不是音檔，要講清楚不然使用者無從修起
-  if (res.status === 401 || res.status === 403) throw new Error('檔案未開放「知道連結的任何人」');
+  let res;
+  try {
+    res = await fetchWithTimeout(driveDownloadUrl(fileId), { mode: 'cors', credentials: 'omit' }, 8000);
+  } catch (err) {
+    // CORS 被擋時瀏覽器不會把 403 交到我們手上，只會丟 TypeError（連狀態碼都讀不到），
+    // 所以這種也要當成「這條路不通」記起來。逾時丟的是 AbortError，不算在內
+    if (err.name === 'TypeError') driveDirectBlocked = true;
+    throw err;
+  }
+  // 403 不是權限問題：Drive 的下載端點掛了 Fetch Metadata 政策
+  // （回應帶 vary: Sec-Fetch-Dest, Sec-Fetch-Mode, Sec-Fetch-Site），
+  // 只要 Sec-Fetch-Site 是 cross-site 就一律 403，不分 cors／no-cors／有沒有 Range，
+  // 檔案開不開放共用都一樣。curl 不送這些 header 所以測起來是 206，很容易誤判成權限問題。
+  // 記起來之後就別再白試這條跟串流那條，直接走後端
+  if (res.status === 401 || res.status === 403) {
+    driveDirectBlocked = true;
+    throw new Error('Google 擋掉跨站讀取（與共用設定無關）');
+  }
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const blob = await res.blob();
   // 檔案太大時 Drive 會先回一頁病毒掃描確認頁；沒開放共用時回的則是登入頁，兩種都是 HTML
-  if (blob.type && blob.type.indexOf('text/html') === 0) throw new Error('Drive 回的是網頁不是音檔（未開放共用或檔案過大）');
+  if (blob.type && blob.type.indexOf('text/html') === 0) throw new Error('Drive 回的是網頁不是音檔（檔案過大會先回病毒掃描確認頁）');
   const blobUrl = URL.createObjectURL(blob);
   driveBlobCache[fileId] = blobUrl;
   return blobUrl;
@@ -4178,6 +4192,10 @@ async function fetchDriveBlobUrl(fileId) {
 let driveProxyUnavailable = false;
 // 超過後端 base64 大小上限的檔案也一樣，再點幾次都是同樣結果，不要每次都等滿 12 秒
 const driveProxyTooLarge = {};
+// Google 用 Fetch Metadata 擋掉跨站讀取時，直連串流與 CORS blob 兩條都不可能通，
+// 遇過一次就整個 session 直接走後端，不要每張卡都再白試兩次。
+// 留成旗標而不是寫死順序，是因為這是 Google 端的政策，哪天放寬就會自己走回快的那條
+let driveDirectBlocked = false;
 
 // 再退一步：請後端把檔案轉 base64 回來（Google 之後改 CORS 政策時的保險）
 async function fetchDriveBlobUrlViaProxy(fileId) {
@@ -4250,17 +4268,19 @@ async function playGoogleDriveAudio(url, btnElement, onErrorCallback) {
   // 只試最終供檔網址就好，drive.google.com/uc 只是 303 轉到同一個位置，試兩次是白等。
   // 逾時給得比原本的 2 秒寬：CORP 擋掉是立刻報錯不吃逾時，這個值只在網路慢時才咬到，
   // 設太短等於把慢網路的使用者推去走「整包下載」那條更慢的路
-  try {
-    await playOnSharedAudio(driveDownloadUrl(fileId), btnElement, 5000, startSeconds);
-    return;
-  } catch (err) {
-    console.warn('drive-direct-stream failed:', err);
-    errors.push(`drive-direct-stream: ${err.message}`);
+  if (!driveDirectBlocked) {
+    try {
+      await playOnSharedAudio(driveDownloadUrl(fileId), btnElement, 5000, startSeconds);
+      return;
+    } catch (err) {
+      console.warn('drive-direct-stream failed:', err);
+      errors.push(`drive-direct-stream: ${err.message}`);
+    }
   }
 
   // 以下兩條都要整包下載完才播，是給擋掉串流的瀏覽器用的備援
   const strategies = [
-    ['drive-cors-blob', () => fetchDriveBlobUrl(fileId)],
+    ...(driveDirectBlocked ? [] : [['drive-cors-blob', () => fetchDriveBlobUrl(fileId)]]),
     ['proxy-base64-blob', () => fetchDriveBlobUrlViaProxy(fileId)],
   ];
 
