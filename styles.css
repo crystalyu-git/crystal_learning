@@ -858,7 +858,9 @@ select.form-input {
   font-size: 0.9rem;
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  z-index: 2000;
+  /* 要蓋過 .modal-overlay(3000) 與 .loading-overlay(5000)，
+     不然編輯視窗裡跳的提示會被蓋住看不到 */
+  z-index: 6000;
   opacity: 0;
   transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
   pointer-events: none;

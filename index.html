@@ -32,7 +32,7 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;700&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=1.77">
+    <link rel="stylesheet" href="styles.css?v=1.78">
     <!-- 主題早期初始化：防止 Safari 快取舊 app.js 導致閃白 -->
     <script>
     (function() {
@@ -505,15 +505,6 @@
                         <span id="submitBtnText">加入知識庫</span>
                     </button>
                 </form>
-
-                <!-- Success Toast -->
-                <div class="toast" id="successToast">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-                        <polyline points="22 4 12 14.01 9 11.01" />
-                    </svg>
-                    <span id="toastMessage">已成功加入知識庫！</span>
-                </div>
             </div>
         </section>
 
@@ -1174,8 +1165,8 @@
     <!-- wanakana 改為本地檔案：原本從 unpkg 載，第三方 CDN 或該套件被接管就能在本站
          同源執行任意程式碼、直接讀走 localStorage 裡的資料。tesseract.js 全專案 0 次
          呼叫（OCR 走後端 Google Vision），一併移除 -->
-    <script src="vendor/wanakana-5.3.1.min.js?v=1.77"></script>
-    <script src="app.js?v=1.77"></script>
+    <script src="vendor/wanakana-5.3.1.min.js?v=1.78"></script>
+    <script src="app.js?v=1.78"></script>
 
     <!-- OCR Result Overlay -->
     <div id="ocrOverlay"
@@ -1204,6 +1195,16 @@
                     style="font-size:0.85rem;color:var(--text-secondary);line-height:1.6;word-break:break-all"></p>
             </div>
         </div>
+    </div>
+    <!-- Toast：必須留在 body 底下，不能放進任何 .view 裡。
+         .view 沒有 active 時是 display:none，toast 原本掛在 #addView 底下，
+         等於只有在「新增字句」那一頁才看得到，其他頁面跳的提示全部是隱形的 -->
+    <div class="toast" id="successToast">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+            <polyline points="22 4 12 14.01 9 11.01" />
+        </svg>
+        <span id="toastMessage">已成功加入知識庫！</span>
     </div>
 </body>
 
