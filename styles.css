@@ -2343,6 +2343,15 @@ select.form-input {
   max-width: 520px;
 }
 
+/* 表單比視窗高時，讓 modal 自己變成捲動容器（維持置中），
+   否則上下都會被切掉又沒有捲軸可拉。手機版另有覆寫（整個遮罩捲動） */
+.edit-modal,
+.settings-modal {
+  max-height: calc(100vh - 4rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 .edit-modal h3 {
   text-align: center;
   margin-bottom: 1rem;

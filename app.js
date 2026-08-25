@@ -3409,6 +3409,24 @@ function renderLibrary() {
 let editOldAudioUrl = null;
 // Tracks a new audio URL that was uploaded during this edit session (to prompt old-file cleanup on save)
 let pendingOldAudioFileIdForEdit = null;
+// 開啟編輯時的表單快照，用來判斷「使用者到底有沒有改過東西」
+let editFormSnapshot = '';
+
+// 把編輯表單當下的所有值串成一個字串，兩次比對就知道有沒有動過。
+// 音源的起始秒數／開新分頁其實會寫回 audioUrl，但還沒 flush 的情況也一起收進來
+function snapshotEditForm() {
+  const val = (sel) => $(sel)?.value ?? '';
+  return JSON.stringify([
+    val('#editWord'), val('#editPronunciation'), val('#editMeaning'), val('#editExample'),
+    val('#editCategory'), val('#editTagInput'),
+    val('#editAudioUrl'), val('#editAudioStart'), $('#editAudioNewTab')?.checked ? 1 : 0,
+    val('#editImageUrl'), val('#editLang'), val('#editLangCustom')
+  ]);
+}
+
+function isEditFormDirty() {
+  return snapshotEditForm() !== editFormSnapshot;
+}
 
 function openEditModal(id) {
   const card = cards.find(c => c.id === id);
@@ -3445,6 +3463,7 @@ function openEditModal(id) {
   if (editTransStatusEl) { editTransStatusEl.style.display = 'none'; editTransStatusEl.textContent = ''; }
 
   $('#editModal').classList.add('active');
+  editFormSnapshot = snapshotEditForm();
 }
 
 // Keeps the category suggestions dropdown updated
@@ -3535,10 +3554,46 @@ function initModal() {
   }
 
   // Edit Modal Event Listeners
-  $('#cancelEdit').addEventListener('click', () => {
+  const closeEditModal = () => {
     $('#editModal').classList.remove('active');
     const ets = $('#editTranslateStatus');
     if (ets) { ets.style.display = 'none'; ets.textContent = ''; }
+  };
+
+  $('#cancelEdit').addEventListener('click', closeEditModal);
+
+  // 點編輯視窗以外的區域就關閉。用 mousedown 的起點一起判斷，
+  // 避免在表單裡拖曳選字、放開時剛好落在遮罩上而誤關
+  const editModalEl = $('#editModal');
+  let editDownOnOverlay = false;
+  editModalEl.addEventListener('mousedown', (e) => {
+    editDownOnOverlay = e.target === editModalEl;
+  });
+  editModalEl.addEventListener('click', (e) => {
+    const clickedOverlay = e.target === editModalEl && editDownOnOverlay;
+    editDownOnOverlay = false;
+    if (!clickedOverlay) return;
+    // 沒動過就直接關；改過才問一次，避免誤觸把沒存的內容丟掉
+    if (isEditFormDirty()) {
+      $('#discardEditModal').classList.add('active');
+    } else {
+      closeEditModal();
+    }
+  });
+
+  $('#keepEditing').addEventListener('click', () => {
+    $('#discardEditModal').classList.remove('active');
+  });
+
+  $('#confirmDiscardEdit').addEventListener('click', () => {
+    $('#discardEditModal').classList.remove('active');
+    closeEditModal();
+  });
+
+  $('#discardEditModal').addEventListener('click', (e) => {
+    if (e.target === $('#discardEditModal')) {
+      $('#discardEditModal').classList.remove('active');
+    }
   });
 
   $('#editForm').addEventListener('submit', async (e) => {
@@ -3604,8 +3659,6 @@ function initModal() {
     }
   });
 
-  // ⚠️ 編輯中不開放點遮罩關閉，避免誤觸關閉視窗
-  // 使用者需透過「取消」或「儲存變更」按鈕離開
 }
 
 // ── Settings ──
