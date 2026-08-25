@@ -329,8 +329,12 @@ function extractYouTubeId(url) {
 // 後端 Sheets 的欄位是寫死的 A~L，多一欄兩支 backend 都要改再重新部署。
 // YouTube 用 query 的 ?t=90s（它原生就吃這個參數，開新分頁會跳到指定秒數，
 // 也順便相容從 YouTube「複製當前時間網址」貼進來的連結）；
-// Drive／直接音檔則用 hash 的 #t=90，hash 不會送到伺服器，
-// 不會弄壞 Drive 網址或帶簽章的檔案連結，而且瀏覽器本來就認得這個 media fragment
+// Drive 也必須用 query 的 ?t=90：它的播放器跟 YouTube 同一套、讀的是 query，
+// 原本為了「hash 不送到伺服器比較安全」寫成 #t=90，我們自己用 <audio> 播時沒差
+// （getAudioStartSeconds 兩種都讀得到），但 Drive 擋掉直接播放而退回開新分頁時，
+// Drive 的播放器看不到 hash，就會從頭播；
+// 直連音檔仍用 hash 的 #t=90，那是瀏覽器原生的 media fragment，
+// 而且 hash 不會送到伺服器，不會弄壞帶簽章的檔案連結
 function parseTimeToSeconds(str) {
   const s = String(str || '').trim();
   if (!s) return null;
@@ -366,8 +370,12 @@ function isSeekableAudioSource(url) {
   const raw = String(url || '').trim();
   if (!raw) return false;
   return !!extractYouTubeId(raw)
-    || /drive\.google\.com|docs\.google\.com/.test(raw)
+    || isGoogleDriveUrl(raw)
     || isDirectAudioFile(raw);
+}
+
+function isGoogleDriveUrl(url) {
+  return /drive\.google\.com|docs\.google\.com/.test(String(url || ''));
 }
 
 // 副檔名後面可能還接著 ?t= 或 #t=，不能只認結尾
@@ -379,7 +387,8 @@ function isDirectAudioFile(url) {
 function withAudioStart(url, seconds) {
   const raw = String(url || '').trim();
   if (!raw) return raw;
-  const isYouTube = !!extractYouTubeId(raw);
+  // YouTube 與 Drive 的播放器都只讀 query 的 t
+  const useQuery = !!extractYouTubeId(raw) || isGoogleDriveUrl(raw);
 
   const hashIdx = raw.indexOf('#');
   const hash = hashIdx >= 0 ? raw.slice(hashIdx + 1) : '';
@@ -393,7 +402,8 @@ function withAudioStart(url, seconds) {
   const hashParts = hash.split('&').filter(dropTime);
 
   if (seconds > 0) {
-    if (isYouTube) params.push(`t=${seconds}s`);
+    // YouTube 要 90s 這種寫法，Drive 吃純秒數
+    if (useQuery) params.push(extractYouTubeId(raw) ? `t=${seconds}s` : `t=${seconds}`);
     else hashParts.push(`t=${seconds}`);
   }
   return base
@@ -2764,12 +2774,14 @@ function clearAddForm() {
   $('#inputWord').focus();
 }
 
-function showToast(message) {
+function showToast(message, durationMs = 2500) {
   const toast = $('#successToast');
   $('#toastMessage').textContent = message;
   toast.classList.add('show');
-  setTimeout(() => toast.classList.remove('show'), 2500);
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove('show'), durationMs);
 }
+let toastTimer = null;
 
 // ── Review System ──
 function initReview() {
@@ -3928,7 +3940,7 @@ document.addEventListener('click', unlockMediaPlayback, true);
 function playOrSpeak(card, defaultText, lang, btnElement) {
   const langCode = getLangCode(lang);
   if (card.audioUrl) {
-    const isDriveUrl = /drive\.google\.com|docs\.google\.com/.test(card.audioUrl);
+    const isDriveUrl = isGoogleDriveUrl(card.audioUrl);
     const ytId = extractYouTubeId(card.audioUrl);
 
     if (isDriveUrl) {
@@ -4147,11 +4159,16 @@ function fetchWithTimeout(url, options = {}, timeoutMs = 3000) {
 
 async function fetchDriveBlobUrl(fileId) {
   if (driveBlobCache[fileId]) return driveBlobCache[fileId];
-  const res = await fetchWithTimeout(driveDownloadUrl(fileId), { mode: 'cors', credentials: 'omit' }, 3000);
+  // 這條要把整個音檔下載完才算成功，原本 3 秒是照「連不上就快點放棄」抓的，
+  // 但幾 MB 的音檔在手機網路上本來就要好幾秒，等於網路一慢就一定失敗、退回開新分頁
+  const res = await fetchWithTimeout(driveDownloadUrl(fileId), { mode: 'cors', credentials: 'omit' }, 8000);
+  // credentials: 'omit'，所以檔案一定要開放「知道連結的任何人」才讀得到，
+  // 沒開放時 Drive 回的是登入頁而不是音檔，要講清楚不然使用者無從修起
+  if (res.status === 401 || res.status === 403) throw new Error('檔案未開放「知道連結的任何人」');
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const blob = await res.blob();
-  // 檔案太大時 Drive 會先回一頁病毒掃描確認頁，不是音檔
-  if (blob.type && blob.type.indexOf('text/html') === 0) throw new Error('Drive 回傳確認頁');
+  // 檔案太大時 Drive 會先回一頁病毒掃描確認頁；沒開放共用時回的則是登入頁，兩種都是 HTML
+  if (blob.type && blob.type.indexOf('text/html') === 0) throw new Error('Drive 回的是網頁不是音檔（未開放共用或檔案過大）');
   const blobUrl = URL.createObjectURL(blob);
   driveBlobCache[fileId] = blobUrl;
   return blobUrl;
@@ -4159,11 +4176,14 @@ async function fetchDriveBlobUrl(fileId) {
 
 // 後端沒部署 getAudio 端點的話，這條每次都白跑，確認過一次就整個 session 跳過
 let driveProxyUnavailable = false;
+// 超過後端 base64 大小上限的檔案也一樣，再點幾次都是同樣結果，不要每次都等滿 12 秒
+const driveProxyTooLarge = {};
 
 // 再退一步：請後端把檔案轉 base64 回來（Google 之後改 CORS 政策時的保險）
 async function fetchDriveBlobUrlViaProxy(fileId) {
   if (driveBlobCache[fileId]) return driveBlobCache[fileId];
   if (driveProxyUnavailable) throw new Error('後端無 getAudio 端點');
+  if (driveProxyTooLarge[fileId]) throw new Error('檔案超過後端 base64 上限');
   const audioUrl = proxyGetUrl({ action: 'getAudio', fileId });
   if (!audioUrl) throw new Error('尚未設定後端 Proxy URL');
 
@@ -4171,7 +4191,10 @@ async function fetchDriveBlobUrlViaProxy(fileId) {
   const res = await fetchWithTimeout(audioUrl, {}, 12000);
   const json = await res.json();
   // 後端還是舊版時會忽略 action、回傳整包卡片，用有沒有 base64 判斷
-  if (!json.success) throw new Error(json.error || 'getAudio failed');
+  if (!json.success) {
+    if (/too large/i.test(json.error || '')) driveProxyTooLarge[fileId] = true;
+    throw new Error(json.error || 'getAudio failed');
+  }
   if (!json.base64) {
     driveProxyUnavailable = true;
     throw new Error('後端尚未重新部署');
@@ -4218,6 +4241,24 @@ async function playGoogleDriveAudio(url, btnElement, onErrorCallback) {
   }
 
   const errors = [];
+
+  // 直連 <audio src> 排第一：三條裡只有這條是串流且支援 Range，
+  // 長音檔可以直接跟伺服器要第 140 秒那段的位元組，不用先把前面兩分鐘下載完，
+  // 也不用把幾十 MB 整包塞進記憶體（webclip 裡很容易就爆掉）。
+  // 它原本排最後是因為 Safari 會用 CORP 擋掉，但那是網路層直接拒絕、失敗得很快，
+  // 排前面對 Safari 幾乎不多花時間，對 Chrome／Android 則是長音檔秒開。
+  // 只試最終供檔網址就好，drive.google.com/uc 只是 303 轉到同一個位置，試兩次是白等。
+  // 逾時給得比原本的 2 秒寬：CORP 擋掉是立刻報錯不吃逾時，這個值只在網路慢時才咬到，
+  // 設太短等於把慢網路的使用者推去走「整包下載」那條更慢的路
+  try {
+    await playOnSharedAudio(driveDownloadUrl(fileId), btnElement, 5000, startSeconds);
+    return;
+  } catch (err) {
+    console.warn('drive-direct-stream failed:', err);
+    errors.push(`drive-direct-stream: ${err.message}`);
+  }
+
+  // 以下兩條都要整包下載完才播，是給擋掉串流的瀏覽器用的備援
   const strategies = [
     ['drive-cors-blob', () => fetchDriveBlobUrl(fileId)],
     ['proxy-base64-blob', () => fetchDriveBlobUrlViaProxy(fileId)],
@@ -4234,15 +4275,6 @@ async function playGoogleDriveAudio(url, btnElement, onErrorCallback) {
     }
   }
 
-  // 最後才試直連 <audio src>：CORP 會擋掉的就是這條，但 Chrome 之類寬鬆的瀏覽器還是能播
-  // 只試最終供檔網址就好，drive.google.com/uc 只是 303 轉到同一個位置，試兩次是白等
-  try {
-    await playOnSharedAudio(driveDownloadUrl(fileId), btnElement, 2000, startSeconds);
-    return;
-  } catch (err) {
-    console.warn('Direct playback failed:', err);
-  }
-
   if (btnElement) btnElement.classList.remove('speaking');
   driveFailCache[fileId] = Date.now();
 
@@ -4253,8 +4285,18 @@ async function playGoogleDriveAudio(url, btnElement, onErrorCallback) {
     return;
   }
 
-  showToast('Google Drive 阻擋了直接播放，為您開啟新分頁聆聽！');
-  window.open(url, '_blank');
+  // standalone 那條早就會把 errors[0] 秀出來，這條卻整個丟掉，
+  // 使用者只看到「開了新分頁」，沒有任何線索可以回報是哪一關卡住
+  // 三條策略的錯誤全部帶出來：第一條失敗多半是瀏覽器擋 CORS，
+  // 真正有診斷價值的常常是走後端那條（檔案過大／後端沒重新部署）
+  const reason = errors.join(' / ') || '未知原因';
+  // Drive 的音訊播放器不吃 t 參數（那是影片才有的），退到這條就一定從頭播，
+  // 與其讓人以為設定壞掉，不如講明白
+  const startNote = startSeconds ? `，且 Drive 不會自動跳到 ${formatSecondsAsTime(startSeconds)}` : '';
+  // 開新分頁會馬上把焦點搶走，用預設的 2.5 秒等於沒機會看，這則留久一點
+  showToast(`無法直接播放（${reason}）${startNote}，改開新分頁`, 8000);
+  // 影片檔的話 Drive 播放器讀得到 query 的 t，順手轉一下；音檔則是無效但無害
+  window.open(withAudioStart(url, startSeconds), '_blank');
 }
 
 function playDirectAudio(url, btnElement, onErrorCallback) {
