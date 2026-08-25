@@ -4082,8 +4082,36 @@ let currentAudio = null;
 const driveBlobCache = {};
 
 // fileId → 上次全部失敗的時間，這段期間內再點就直接跳系統發音，不重跑一輪等待
-const driveFailCache = {};
-const DRIVE_FAIL_TTL = 60 * 1000;
+// 播不動的 Drive 檔案記進 localStorage。Google 擋掉跨站讀取之後，同一個檔案下次一定
+// 是同樣結果，只存在記憶體的話每次重開 app 都要再等完整一輪（串流逾時 + 後端來回好幾秒）
+// 才會開新分頁。留 TTL 是因為 Google 的政策與檔案大小都可能改變，過期就重新試一次
+const DRIVE_UNPLAYABLE_KEY = 'crystal_drive_unplayable';
+const DRIVE_UNPLAYABLE_TTL = 24 * 60 * 60 * 1000;
+
+function readDriveUnplayable() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(DRIVE_UNPLAYABLE_KEY) || '{}');
+    const files = {};
+    // 過期的順手丟掉，不然這包會一直長大
+    for (const [id, ts] of Object.entries(raw.files || {})) {
+      if (Date.now() - ts < DRIVE_UNPLAYABLE_TTL) files[id] = ts;
+    }
+    const blockedAt = raw.directBlockedAt && Date.now() - raw.directBlockedAt < DRIVE_UNPLAYABLE_TTL
+      ? raw.directBlockedAt : 0;
+    return { files, directBlockedAt: blockedAt };
+  } catch (e) {
+    return { files: {}, directBlockedAt: 0 };
+  }
+}
+
+function writeDriveUnplayable(patch) {
+  const cur = readDriveUnplayable();
+  const next = {
+    files: { ...cur.files, ...(patch.files || {}) },
+    directBlockedAt: patch.directBlockedAt || cur.directBlockedAt || 0,
+  };
+  try { localStorage.setItem(DRIVE_UNPLAYABLE_KEY, JSON.stringify(next)); } catch (e) { }
+}
 
 // 在共用的 audio 元素上播放；resolve = 真的開始播了，reject = 這個來源不能用
 // 重點：play() 要在同一個 tick 內叫，中間不能 await，否則 iOS 會判定脫離使用者手勢
@@ -4167,7 +4195,7 @@ async function fetchDriveBlobUrl(fileId) {
   } catch (err) {
     // CORS 被擋時瀏覽器不會把 403 交到我們手上，只會丟 TypeError（連狀態碼都讀不到），
     // 所以這種也要當成「這條路不通」記起來。逾時丟的是 AbortError，不算在內
-    if (err.name === 'TypeError') driveDirectBlocked = true;
+    if (err.name === 'TypeError') markDriveDirectBlocked();
     throw err;
   }
   // 403 不是權限問題：Drive 的下載端點掛了 Fetch Metadata 政策
@@ -4176,7 +4204,7 @@ async function fetchDriveBlobUrl(fileId) {
   // 檔案開不開放共用都一樣。curl 不送這些 header 所以測起來是 206，很容易誤判成權限問題。
   // 記起來之後就別再白試這條跟串流那條，直接走後端
   if (res.status === 401 || res.status === 403) {
-    driveDirectBlocked = true;
+    markDriveDirectBlocked();
     throw new Error('Google 擋掉跨站讀取（與共用設定無關）');
   }
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -4195,7 +4223,12 @@ const driveProxyTooLarge = {};
 // Google 用 Fetch Metadata 擋掉跨站讀取時，直連串流與 CORS blob 兩條都不可能通，
 // 遇過一次就整個 session 直接走後端，不要每張卡都再白試兩次。
 // 留成旗標而不是寫死順序，是因為這是 Google 端的政策，哪天放寬就會自己走回快的那條
-let driveDirectBlocked = false;
+let driveDirectBlocked = readDriveUnplayable().directBlockedAt > 0;
+
+function markDriveDirectBlocked() {
+  driveDirectBlocked = true;
+  writeDriveUnplayable({ directBlockedAt: Date.now() });
+}
 
 // 再退一步：請後端把檔案轉 base64 回來（Google 之後改 CORS 政策時的保險）
 async function fetchDriveBlobUrlViaProxy(fileId) {
@@ -4205,8 +4238,12 @@ async function fetchDriveBlobUrlViaProxy(fileId) {
   const audioUrl = proxyGetUrl({ action: 'getAudio', fileId });
   if (!audioUrl) throw new Error('尚未設定後端 Proxy URL');
 
-  // Apps Script 本身回應就要 2~3 秒，再加 base64 編碼，逾時不能設太短
-  const res = await fetchWithTimeout(audioUrl, {}, 12000);
+  // Apps Script 本身回應就要 2~3 秒，再加 base64 編碼，逾時不能設太短。
+  // Google 擋掉跨站直讀之後這條變成 Drive 音檔唯一的路，接近上限的檔案
+  // （20MB 的檔案 base64 後約 27MB）光是傳到手機上就可能超過十幾秒，
+  // 12 秒等於把大檔案一律判死。這個等待每個檔案每個 session 只會發生一次，
+  // 拿到的 blob 會被 driveBlobCache 接住，之後重播不再連網
+  const res = await fetchWithTimeout(audioUrl, {}, 30000);
   const json = await res.json();
   // 後端還是舊版時會忽略 action、回傳整包卡片，用有沒有 base64 判斷
   if (!json.success) {
@@ -4237,10 +4274,9 @@ async function playGoogleDriveAudio(url, btnElement, onErrorCallback) {
   // 起始秒數寫在卡片網址的 hash 上，但真正播的是 blob／download 網址，要自己帶過去
   const startSeconds = getAudioStartSeconds(url) || 0;
 
-  // 這個檔案剛剛才全部試過失敗，不用再讓使用者等一輪，直接退回系統發音
-  const failedAt = driveFailCache[fileId];
-  if (failedAt && Date.now() - failedAt < DRIVE_FAIL_TTL) {
-    if (onErrorCallback) onErrorCallback();
+  // 這個檔案先前已經確認在 app 內播不動，不要再讓人從頭等一輪
+  if (readDriveUnplayable().files[fileId]) {
+    giveUpDriveAudio(url, fileId, startSeconds, ['先前已確認無法在 app 內播放'], btnElement, onErrorCallback, 2500);
     return;
   }
 
@@ -4295,8 +4331,13 @@ async function playGoogleDriveAudio(url, btnElement, onErrorCallback) {
     }
   }
 
+  giveUpDriveAudio(url, fileId, startSeconds, errors, btnElement, onErrorCallback, 8000);
+}
+
+// 三條策略都失敗（或先前就確認過失敗）之後的收尾
+function giveUpDriveAudio(url, fileId, startSeconds, errors, btnElement, onErrorCallback, toastMs) {
   if (btnElement) btnElement.classList.remove('speaking');
-  driveFailCache[fileId] = Date.now();
+  writeDriveUnplayable({ files: { [fileId]: Date.now() } });
 
   // standalone（加入主畫面）開新分頁多半沒反應，直接退回系統發音比較有用
   if (isStandaloneApp()) {
@@ -4305,16 +4346,14 @@ async function playGoogleDriveAudio(url, btnElement, onErrorCallback) {
     return;
   }
 
-  // standalone 那條早就會把 errors[0] 秀出來，這條卻整個丟掉，
-  // 使用者只看到「開了新分頁」，沒有任何線索可以回報是哪一關卡住
-  // 三條策略的錯誤全部帶出來：第一條失敗多半是瀏覽器擋 CORS，
+  // 三條策略的錯誤全部帶出來：前兩條失敗多半是 Google 擋掉跨站讀取，
   // 真正有診斷價值的常常是走後端那條（檔案過大／後端沒重新部署）
   const reason = errors.join(' / ') || '未知原因';
   // Drive 的音訊播放器不吃 t 參數（那是影片才有的），退到這條就一定從頭播，
   // 與其讓人以為設定壞掉，不如講明白
   const startNote = startSeconds ? `，且 Drive 不會自動跳到 ${formatSecondsAsTime(startSeconds)}` : '';
-  // 開新分頁會馬上把焦點搶走，用預設的 2.5 秒等於沒機會看，這則留久一點
-  showToast(`無法直接播放（${reason}）${startNote}，改開新分頁`, 8000);
+  // 開新分頁會馬上把焦點搶走，用預設的 2.5 秒等於沒機會看，第一次失敗那則留久一點
+  showToast(`無法直接播放（${reason}）${startNote}，改開新分頁`, toastMs);
   // 影片檔的話 Drive 播放器讀得到 query 的 t，順手轉一下；音檔則是無效但無害
   window.open(withAudioStart(url, startSeconds), '_blank');
 }
