@@ -4082,32 +4082,34 @@ let currentAudio = null;
 const driveBlobCache = {};
 
 // fileId → 上次全部失敗的時間，這段期間內再點就直接跳系統發音，不重跑一輪等待
-// 播不動的 Drive 檔案記進 localStorage。Google 擋掉跨站讀取之後，同一個檔案下次一定
-// 是同樣結果，只存在記憶體的話每次重開 app 都要再等完整一輪（串流逾時 + 後端來回好幾秒）
-// 才會開新分頁。留 TTL 是因為 Google 的政策與檔案大小都可能改變，過期就重新試一次
+// 記進 localStorage 的只有「不會再變的結論」，才不會白等：
+//   directBlockedAt — Google 用 Fetch Metadata 擋掉跨站讀取，是政策層級、不因檔案而異
+//   tooLarge[fileId] — 後端明講檔案超過 base64 上限，同一個 id 不會突然變小
+// 逾時或其他失敗刻意「不」記：換小檔案、重新部署後端都可能讓它變成功，
+// 使用者主動按播放鍵就是「再試一次」的意思，記起來會讓人永遠試不回來
 const DRIVE_UNPLAYABLE_KEY = 'crystal_drive_unplayable';
 const DRIVE_UNPLAYABLE_TTL = 24 * 60 * 60 * 1000;
 
 function readDriveUnplayable() {
   try {
     const raw = JSON.parse(localStorage.getItem(DRIVE_UNPLAYABLE_KEY) || '{}');
-    const files = {};
+    const tooLarge = {};
     // 過期的順手丟掉，不然這包會一直長大
-    for (const [id, ts] of Object.entries(raw.files || {})) {
-      if (Date.now() - ts < DRIVE_UNPLAYABLE_TTL) files[id] = ts;
+    for (const [id, ts] of Object.entries(raw.tooLarge || {})) {
+      if (Date.now() - ts < DRIVE_UNPLAYABLE_TTL) tooLarge[id] = ts;
     }
     const blockedAt = raw.directBlockedAt && Date.now() - raw.directBlockedAt < DRIVE_UNPLAYABLE_TTL
       ? raw.directBlockedAt : 0;
-    return { files, directBlockedAt: blockedAt };
+    return { tooLarge, directBlockedAt: blockedAt };
   } catch (e) {
-    return { files: {}, directBlockedAt: 0 };
+    return { tooLarge: {}, directBlockedAt: 0 };
   }
 }
 
 function writeDriveUnplayable(patch) {
   const cur = readDriveUnplayable();
   const next = {
-    files: { ...cur.files, ...(patch.files || {}) },
+    tooLarge: { ...cur.tooLarge, ...(patch.tooLarge || {}) },
     directBlockedAt: patch.directBlockedAt || cur.directBlockedAt || 0,
   };
   try { localStorage.setItem(DRIVE_UNPLAYABLE_KEY, JSON.stringify(next)); } catch (e) { }
@@ -4218,8 +4220,7 @@ async function fetchDriveBlobUrl(fileId) {
 
 // 後端沒部署 getAudio 端點的話，這條每次都白跑，確認過一次就整個 session 跳過
 let driveProxyUnavailable = false;
-// 超過後端 base64 大小上限的檔案也一樣，再點幾次都是同樣結果，不要每次都等滿 12 秒
-const driveProxyTooLarge = {};
+// 超過後端 base64 大小上限的檔案，再點幾次都是同樣結果，不要每次都等滿逾時
 // Google 用 Fetch Metadata 擋掉跨站讀取時，直連串流與 CORS blob 兩條都不可能通，
 // 遇過一次就整個 session 直接走後端，不要每張卡都再白試兩次。
 // 留成旗標而不是寫死順序，是因為這是 Google 端的政策，哪天放寬就會自己走回快的那條
@@ -4234,7 +4235,7 @@ function markDriveDirectBlocked() {
 async function fetchDriveBlobUrlViaProxy(fileId) {
   if (driveBlobCache[fileId]) return driveBlobCache[fileId];
   if (driveProxyUnavailable) throw new Error('後端無 getAudio 端點');
-  if (driveProxyTooLarge[fileId]) throw new Error('檔案超過後端 base64 上限');
+  if (readDriveUnplayable().tooLarge[fileId]) throw new Error('檔案超過後端 base64 上限');
   const audioUrl = proxyGetUrl({ action: 'getAudio', fileId });
   if (!audioUrl) throw new Error('尚未設定後端 Proxy URL');
 
@@ -4247,7 +4248,7 @@ async function fetchDriveBlobUrlViaProxy(fileId) {
   const json = await res.json();
   // 後端還是舊版時會忽略 action、回傳整包卡片，用有沒有 base64 判斷
   if (!json.success) {
-    if (/too large/i.test(json.error || '')) driveProxyTooLarge[fileId] = true;
+    if (/too large/i.test(json.error || '')) writeDriveUnplayable({ tooLarge: { [fileId]: Date.now() } });
     throw new Error(json.error || 'getAudio failed');
   }
   if (!json.base64) {
@@ -4273,12 +4274,6 @@ async function playGoogleDriveAudio(url, btnElement, onErrorCallback) {
   const fileId = fileIdMatch[1];
   // 起始秒數寫在卡片網址的 hash 上，但真正播的是 blob／download 網址，要自己帶過去
   const startSeconds = getAudioStartSeconds(url) || 0;
-
-  // 這個檔案先前已經確認在 app 內播不動，不要再讓人從頭等一輪
-  if (readDriveUnplayable().files[fileId]) {
-    giveUpDriveAudio(url, fileId, startSeconds, ['先前已確認無法在 app 內播放'], btnElement, onErrorCallback, 2500);
-    return;
-  }
 
   if (btnElement) btnElement.classList.add('speaking');
 
@@ -4337,7 +4332,6 @@ async function playGoogleDriveAudio(url, btnElement, onErrorCallback) {
 // 三條策略都失敗（或先前就確認過失敗）之後的收尾
 function giveUpDriveAudio(url, fileId, startSeconds, errors, btnElement, onErrorCallback, toastMs) {
   if (btnElement) btnElement.classList.remove('speaking');
-  writeDriveUnplayable({ files: { [fileId]: Date.now() } });
 
   // standalone（加入主畫面）開新分頁多半沒反應，直接退回系統發音比較有用
   if (isStandaloneApp()) {
