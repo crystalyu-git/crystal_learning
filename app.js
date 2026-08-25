@@ -559,6 +559,7 @@ async function initApp() {
   initBelief();
   initModal();
   initSettings();
+  renderAppVersion();
   initAudioActions();
   initSmartInput();
   updateDateDisplay();
@@ -3662,6 +3663,20 @@ function initModal() {
 }
 
 // ── Settings ──
+// 版號直接讀 index.html 上 app.js?v=… 的 cache busting 版號，
+// 不另外維護一份常數，才不會出現「畫面顯示新版、實際載到舊快取」的落差
+function getAppVersion() {
+  const src = document.querySelector('script[src*="app.js"]')?.getAttribute('src') || '';
+  return src.split('?v=')[1] || '';
+}
+
+function renderAppVersion() {
+  const el = $('#settingsVersion');
+  if (!el) return;
+  const v = getAppVersion();
+  el.textContent = v ? `Crystal Learning v${v}` : 'Crystal Learning';
+}
+
 function initSettings() {
   const modal = $('#settingsModal');
 

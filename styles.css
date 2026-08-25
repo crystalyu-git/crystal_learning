@@ -2453,6 +2453,17 @@ select.form-input {
   max-width: 520px;
 }
 
+/* 設定頁最下方的版號：純資訊，要低調但看得到 */
+.settings-version {
+  margin-top: 1.25rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border-light);
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+
 .settings-modal h3 {
   text-align: center;
   margin-bottom: 1.25rem;
