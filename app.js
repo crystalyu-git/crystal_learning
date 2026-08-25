@@ -411,6 +411,59 @@ function withAudioStart(url, seconds) {
     + (hashParts.length ? '#' + hashParts.join('&') : '');
 }
 
+// ── 直接開新分頁 ──
+// 跟起始秒數一樣不另外開 card 欄位（後端 Sheets 欄位寫死 A~L），寫進 audioUrl 的 hash。
+// 用 hash 而非 query 是因為這個旗標純粹給前端看，不該送到 Drive／檔案伺服器
+function isNewTabAudio(url) {
+  return /[?&#]newtab=1(?:&|$)/i.test(String(url || ''));
+}
+
+function withNewTab(url, on) {
+  const raw = String(url || '').trim();
+  if (!raw) return raw;
+  const hashIdx = raw.indexOf('#');
+  const hash = hashIdx >= 0 ? raw.slice(hashIdx + 1) : '';
+  const noHash = hashIdx >= 0 ? raw.slice(0, hashIdx) : raw;
+  // 只動 newtab，hash 裡的 t= 之類要留著
+  const parts = hash.split('&').filter(p => p && !/^newtab=/i.test(p));
+  if (on) parts.push('newtab=1');
+  return noHash + (parts.length ? '#' + parts.join('&') : '');
+}
+
+// 勾選框只在「我們原本會嘗試在 app 內播」的音源出現。
+// YouTube 本來就是開新分頁，認不得的連結也是，那兩種給勾選框只會讓人以為有差別
+function canPlayInApp(url) {
+  const raw = String(url || '').trim();
+  if (!raw || extractYouTubeId(raw)) return false;
+  return isGoogleDriveUrl(raw) || isDirectAudioFile(raw);
+}
+
+function bindAudioNewTabField(urlInputId, checkboxId, rowId) {
+  const urlInput = $(`#${urlInputId}`);
+  const checkbox = $(`#${checkboxId}`);
+  const row = $(`#${rowId}`);
+  if (!urlInput || !checkbox || !row) return;
+
+  const syncFromUrl = () => {
+    const url = urlInput.value.trim();
+    const supported = canPlayInApp(url);
+    row.style.display = supported ? '' : 'none';
+    checkbox.checked = supported && isNewTabAudio(url);
+  };
+
+  urlInput.addEventListener('input', syncFromUrl);
+  urlInput.addEventListener('change', syncFromUrl);
+  // 接在起始時間欄位的掛勾後面，兩個欄位一起同步，不用再去改那三個呼叫點
+  const prevSync = urlInput._syncAudioFields;
+  urlInput._syncAudioFields = () => { prevSync?.(); syncFromUrl(); };
+  checkbox.addEventListener('change', () => {
+    const url = urlInput.value.trim();
+    if (!canPlayInApp(url)) return;
+    urlInput.value = withNewTab(url, checkbox.checked);
+  });
+  syncFromUrl();
+}
+
 // 起始時間欄位只在音源真的能跳秒數時出現（YouTube／Drive／直接音檔）
 function bindAudioStartField(urlInputId, startInputId, rowId) {
   const urlInput = $(`#${urlInputId}`);
@@ -451,7 +504,9 @@ function bindAudioStartField(urlInputId, startInputId, rowId) {
   startInput.addEventListener('blur', applyToUrl);
 
   // 程式改動網址時（上傳音檔、開編輯視窗、清空表單）不會觸發 input 事件，要手動叫一次
-  urlInput._syncAudioStart = syncFromUrl;
+  // 開啟編輯視窗、清空新增表單、上傳完音檔這三處會用程式改網址欄位的值，
+  // 程式改 value 不會觸發 input 事件，所以留一個掛勾讓那些地方手動叫一次
+  urlInput._syncAudioFields = syncFromUrl;
 }
 
 // ── Auth ──
@@ -2763,7 +2818,7 @@ function clearAddForm() {
   // Also clear status texts
   const addStatus = $('#addAudioStatus');
   if (addStatus) { addStatus.style.display = 'none'; addStatus.textContent = ''; }
-  $('#inputAudioUrl')._syncAudioStart?.();
+  $('#inputAudioUrl')._syncAudioFields?.();
 
   const translateStatus = $('#translateStatus');
   if (translateStatus) { translateStatus.style.display = 'none'; translateStatus.textContent = ''; }
@@ -3371,7 +3426,7 @@ function openEditModal(id) {
   // Use tag-input to populate category chips
   _editTagInput?.setTags(card.category || '');
   $('#editAudioUrl').value = card.audioUrl || '';
-  $('#editAudioUrl')._syncAudioStart?.();
+  $('#editAudioUrl')._syncAudioFields?.();
   setLangValue('editLang', getLangLabel(card.lang) || card.lang || '');
   // Populate imageUrl hidden field
   $('#editImageUrl').value = card.imageUrl || '';
@@ -3943,6 +3998,12 @@ function playOrSpeak(card, defaultText, lang, btnElement) {
     const isDriveUrl = isGoogleDriveUrl(card.audioUrl);
     const ytId = extractYouTubeId(card.audioUrl);
 
+    // 這張卡指定了直接開分頁：不要再試 app 內播放，那正是使用者不想等的東西
+    if (isNewTabAudio(card.audioUrl)) {
+      window.open(withAudioStart(card.audioUrl, getAudioStartSeconds(card.audioUrl) || 0), '_blank');
+      return;
+    }
+
     if (isDriveUrl) {
       playGoogleDriveAudio(card.audioUrl, btnElement, () => {
         if (langCode) speakText(defaultText, langCode, btnElement);
@@ -3986,7 +4047,7 @@ async function uploadAudioToDrive(blob, filename, lang, statusEl, targetInput) {
 
     const shareUrl = await NotionAPI.uploadAudio(base64Data, filename, blob.type, lang);
     targetInput.value = shareUrl;
-    targetInput._syncAudioStart?.();
+    targetInput._syncAudioFields?.();
     statusEl.className = 'audio-status success';
     statusEl.textContent = `音檔上傳成功！(${lang || 'other'})`;
     showToast('音檔上傳成功！');
@@ -4073,6 +4134,8 @@ function initAudioActions() {
 
   bindAudioStartField('inputAudioUrl', 'inputAudioStart', 'addAudioStartRow');
   bindAudioStartField('editAudioUrl', 'editAudioStart', 'editAudioStartRow');
+  bindAudioNewTabField('inputAudioUrl', 'inputAudioNewTab', 'addAudioNewTabRow');
+  bindAudioNewTabField('editAudioUrl', 'editAudioNewTab', 'editAudioNewTabRow');
 }
 
 // Global audio object to prevent overlapping playback
@@ -4244,7 +4307,15 @@ async function fetchDriveBlobUrlViaProxy(fileId) {
   // （20MB 的檔案 base64 後約 27MB）光是傳到手機上就可能超過十幾秒，
   // 12 秒等於把大檔案一律判死。這個等待每個檔案每個 session 只會發生一次，
   // 拿到的 blob 會被 driveBlobCache 接住，之後重播不再連網
-  const res = await fetchWithTimeout(audioUrl, {}, 30000);
+  let res;
+  try {
+    res = await fetchWithTimeout(audioUrl, {}, 30000);
+  } catch (err) {
+    // AbortError 的原生訊息是「signal is aborted without reason」，看不出發生什麼事。
+    // 這條是整包下載，逾時幾乎都代表檔案太大而不是網路斷線，訊息要講得出重點
+    if (err.name === 'AbortError') throw new Error('後端逾時，檔案太大傳不完');
+    throw err;
+  }
   const json = await res.json();
   // 後端還是舊版時會忽略 action、回傳整包卡片，用有沒有 base64 判斷
   if (!json.success) {

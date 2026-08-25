@@ -32,7 +32,7 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;700&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=1.79">
+    <link rel="stylesheet" href="styles.css?v=1.82">
     <!-- 主題早期初始化：防止 Safari 快取舊 app.js 導致閃白 -->
     <script>
     (function() {
@@ -468,6 +468,13 @@
                             <label for="inputAudioStart" class="audio-start-label">從第幾秒開始播</label>
                             <input type="text" id="inputAudioStart" class="form-input audio-start-input"
                                 placeholder="1:30 或 90" autocomplete="off">
+                        </div>
+                        <div class="audio-newtab-row" id="addAudioNewTabRow" style="display:none">
+                            <label class="audio-newtab-label">
+                                <input type="checkbox" id="inputAudioNewTab">
+                                <span>直接開新分頁播放</span>
+                            </label>
+                            <span class="audio-newtab-hint">不在 app 內載入，按下去立刻開分頁</span>
                         </div>
                         <div class="audio-actions" style="display:flex;gap:0.5rem;margin-top:0.5rem">
                             <button type="button" id="addUploadAudioBtn" class="audio-action-btn">
@@ -1062,6 +1069,13 @@
                         <input type="text" id="editAudioStart" class="form-input audio-start-input"
                             placeholder="1:30 或 90" autocomplete="off">
                     </div>
+                    <div class="audio-newtab-row" id="editAudioNewTabRow" style="display:none">
+                        <label class="audio-newtab-label">
+                            <input type="checkbox" id="editAudioNewTab">
+                            <span>直接開新分頁播放</span>
+                        </label>
+                        <span class="audio-newtab-hint">不在 app 內載入，按下去立刻開分頁</span>
+                    </div>
                     <div class="audio-actions" style="display:flex;gap:0.5rem;margin-top:0.5rem">
                         <button type="button" id="editUploadAudioBtn" class="audio-action-btn">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -1165,8 +1179,8 @@
     <!-- wanakana 改為本地檔案：原本從 unpkg 載，第三方 CDN 或該套件被接管就能在本站
          同源執行任意程式碼、直接讀走 localStorage 裡的資料。tesseract.js 全專案 0 次
          呼叫（OCR 走後端 Google Vision），一併移除 -->
-    <script src="vendor/wanakana-5.3.1.min.js?v=1.79"></script>
-    <script src="app.js?v=1.79"></script>
+    <script src="vendor/wanakana-5.3.1.min.js?v=1.82"></script>
+    <script src="app.js?v=1.82"></script>
 
     <!-- OCR Result Overlay -->
     <div id="ocrOverlay"

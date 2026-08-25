@@ -2565,6 +2565,33 @@ select.form-input {
   border-color: var(--accent-danger);
 }
 
+.audio-newtab-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.6rem;
+  margin-top: 0.5rem;
+}
+
+.audio-newtab-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.audio-newtab-label input {
+  accent-color: var(--accent-primary);
+  cursor: pointer;
+}
+
+.audio-newtab-hint {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
 .audio-status {
   margin-top: 0.4rem;
   font-size: 0.78rem;
