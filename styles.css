@@ -3230,6 +3230,61 @@ select.form-input {
   background: var(--gradient-primary);
 }
 
+/* 更換加密密碼：放在標題列，不搶「新增集合A」的主要動作位置 */
+.belief-pass-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.9rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-light);
+  background: var(--bg-glass);
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+@media (hover: hover) {
+  .belief-pass-btn:hover {
+    background: var(--bg-glass-hover);
+    color: var(--text-primary);
+  }
+}
+
+.belief-pass-modal {
+  max-width: 420px;
+  text-align: left;
+}
+
+.belief-pass-modal h3 {
+  font-size: 1.1rem;
+  color: var(--text-primary);
+  margin-bottom: 0.5rem;
+}
+
+.belief-pass-modal .form-input {
+  width: 100%;
+}
+
+.belief-pass-modal .form-input + .form-input {
+  margin-top: 0.6rem;
+}
+
+.belief-pass-note {
+  margin-top: 0.9rem;
+  font-size: 0.78rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.belief-pass-modal .belief-lock-warn {
+  text-align: left;
+}
+
 /* 工具列 */
 .belief-toolbar {
   display: flex;

@@ -755,9 +755,20 @@ async function syncFromNotion() {
       const realNotionCards = notionCards.filter(c => !isMetaCard(c));
       cards = [...realNotionCards];
       saveCardsToLocal();
-    } else if (cards.length > 0) {
+    } else if (Array.isArray(notionCards) && notionCards.length === 0 && cards.length > 0) {
       // Database is empty but local has data — push local to Database。
-      // syncAll 會先刪光整張表，隱藏卡片不在 cards 裡，全部都要補推回去
+      // syncAll 是覆蓋式的（後端會先 deleteRows 刪光整張表），而隱藏卡片不在 cards 裡，
+      // 要靠下面幾行逐一補推回去。判斷條件刻意寫死「明確拿到一個空陣列」：
+      // 後端回了 success 卻沒帶 cards（notionCards 是 undefined）也會落到這裡，
+      // 那是讀取失敗而不是雲端真的空了，照樣覆寫就等於把整張表刪掉重建。
+      if (!canRepushBeliefs()) {
+        // 集合A 鎖著就加不了密、推不回去，而它只存在雲端。這種情況寧可不同步：
+        // 覆寫過去只會把日記月卡片刪光，且沒有任何一步救得回來。
+        console.warn('雲端是空的，但集合A 尚未解鎖、無法一併推回，暫不覆寫雲端');
+        showToast('雲端沒有資料，請先到「集合A｜非A」解鎖再同步');
+        updateSyncStatus('error');
+        return false;
+      }
       await NotionAPI.syncAll(cards);
       if (habits.length > 0) pushHabitsToNotion();
       saveStreak(loadStreak());
@@ -992,6 +1003,8 @@ const BELIEF_KEY_CARD_ID = '__crystal_belief_key__';
 const BELIEF_CARD_PREFIX = '__crystal_beliefs_';
 const BELIEF_STORE_KEY = 'crystal_beliefs';
 const BELIEF_UPDATED_KEY = 'crystal_belief_updated_at';
+const BELIEF_PENDING_PUSH_KEY = 'crystal_belief_pending_push'; // 鎖著時漏推的日記，解鎖後要補
+const BELIEF_PREV_STORE_KEY = 'crystal_beliefs_prev'; // 換密碼前的舊密文備份，只留這台裝置
 const BELIEF_PASS_KEY = 'crystal_belief_pass';
 const BELIEF_SALT_KEY = 'crystal_belief_salt';
 const BELIEF_VERIFIER_KEY = 'crystal_belief_verifier';
@@ -1011,6 +1024,9 @@ let beliefCloudChecked = false;
 // 雲端有月卡片卻解不開的月份。這代表金鑰對不上（多半是某台裝置重新建過金鑰庫），
 // 一定要讓使用者看見——否則「解不開」和「本來就沒寫過」在畫面上長得一模一樣
 let beliefUndecryptable = [];
+// 本機密文用目前的金鑰解不開、但 verifier 又通過時為 true：這份密文屬於上一個金鑰庫
+// （多半是別台裝置換過加密密碼）。內容只能靠雲端補，補到之前一律不准寫入。
+let beliefLocalStale = false;
 
 // ── base64 ⇄ bytes ──
 function bytesToB64(bytes) {
@@ -1106,7 +1122,8 @@ async function createBeliefVault(passphrase) {
   return true;
 }
 
-// 用密碼解鎖既有資料。密碼錯回傳 false，且不動任何既有資料
+// 用密碼解鎖既有資料。密碼錯回傳 false，且不動任何既有資料。
+// 回傳 'stale' 代表密碼是對的，但本機密文屬於上一個金鑰庫、又沒能從雲端補回來
 async function unlockBeliefs(passphrase) {
   const saltB64 = localStorage.getItem(BELIEF_SALT_KEY);
   if (!saltB64) return createBeliefVault(passphrase);
@@ -1117,8 +1134,18 @@ async function unlockBeliefs(passphrase) {
   localStorage.setItem(BELIEF_PASS_KEY, passphrase);
   beliefKey = key;
   beliefLocked = false;
-  await loadBeliefsFromLocal();
+  beliefLocalStale = (await loadBeliefsFromLocal()) === 'stale';
   await pullBeliefsAfterUnlock();
+
+  // 本機密文對不上金鑰、雲端又沒補到內容：退回鎖定。放行只會讓人在空資料上編輯，
+  // 下一次推送就把雲端那個月覆寫成空的——正是 2026-08 那次遺失的形狀
+  if (beliefLocalStale) {
+    console.warn('本機密文屬於舊金鑰庫，且雲端沒有可補的內容，維持鎖定');
+    beliefKey = null;
+    beliefLocked = true;
+    beliefs = [];
+    return 'stale';
+  }
   return true;
 }
 
@@ -1129,7 +1156,16 @@ async function pullBeliefsAfterUnlock() {
   if (!getNotionProxyUrl() || !beliefKey) return;
   try {
     const notionCards = await NotionAPI.loadAll();
-    if (notionCards) await mergeBeliefsFromCloud(notionCards);
+    if (!notionCards) return;
+    await mergeBeliefsFromCloud(notionCards);
+    // 本機密文對不上金鑰、而雲端根本一張月卡片都沒有，那就是「這個金鑰庫是空的」，
+    // 不是拉取失敗。這時放行並把那份對不上的密文換掉，否則密碼正確也永遠進不來
+    if (beliefLocalStale &&
+        !notionCards.some(c => String(c.id).startsWith(BELIEF_CARD_PREFIX))) {
+      beliefLocalStale = false;
+      beliefs = [];
+      await saveBeliefsToLocal();
+    }
   } catch (e) {
     console.warn('解鎖後拉取雲端集合A失敗:', e);
   }
@@ -1145,12 +1181,146 @@ async function tryAutoUnlockBeliefs() {
     if (!(await verifyBeliefKey(key))) return false;
     beliefKey = key;
     beliefLocked = false;
-    await loadBeliefsFromLocal();
+    if ((await loadBeliefsFromLocal()) === 'stale') {
+      // 別台裝置換過加密密碼：存的密碼還是對的，但本機密文是舊金鑰庫的，得跟雲端要
+      beliefLocalStale = true;
+      await pullBeliefsAfterUnlock();
+      if (beliefLocalStale) {
+        beliefKey = null;
+        beliefLocked = true;
+        beliefs = [];
+        return false;
+      }
+    }
     return true;
   } catch (e) {
     console.warn('Belief auto-unlock failed:', e);
     return false;
   }
+}
+
+// 更換加密密碼。整套順序都是為了「中途失敗也不能讓密文變成解不開」而排的：
+//   1. 先跟雲端拉齊，本機必須是完整的那一份——沒拉下來的月份會停在舊金鑰，換完就成孤兒
+//   2. 有任何一個月現在就解不開，直接拒絕：換下去只會讓它從「暫時解不開」變成「永遠」
+//   3. 所有月卡片用新金鑰重推，全部成功之後才換金鑰卡片。順序顛倒的話，中途失敗會
+//      讓雲端宣告新 salt、月卡片卻還是舊密文，其他裝置一台都解不開
+//   4. 任何一步失敗就用手上的舊卡片原地回滾，並且完全不動本機——寧可整個作廢重來
+//   5. 雲端就緒才寫本機，舊密文另存一份 BELIEF_PREV_STORE_KEY 當最後一道保險
+async function rotateBeliefPassphrase(oldPass, newPass, onProgress = () => {}) {
+  if (!beliefKey) return { ok: false, error: '請先解鎖再更換密碼。' };
+  if (beliefLocalStale) return { ok: false, error: '這台裝置的內容還沒從雲端取回，先成功解鎖再換密碼。' };
+  if (!newPass || newPass.length < BELIEF_MIN_PASS_LENGTH) {
+    return { ok: false, error: `新密碼至少 ${BELIEF_MIN_PASS_LENGTH} 個字。` };
+  }
+  if (newPass === oldPass) return { ok: false, error: '新密碼與目前的密碼相同。' };
+
+  const oldSaltB64 = localStorage.getItem(BELIEF_SALT_KEY);
+  const oldKey = await deriveBeliefKey(oldPass, b64ToBytes(oldSaltB64));
+  if (!(await verifyBeliefKey(oldKey))) return { ok: false, error: '目前的密碼不正確。' };
+
+  const proxy = getNotionProxyUrl();
+  let cloudBeliefCards = [];
+
+  if (proxy) {
+    onProgress('正在向雲端確認最新內容...');
+    let notionCards;
+    try {
+      notionCards = await NotionAPI.loadAll();
+    } catch (e) {
+      return { ok: false, error: '連不上雲端，什麼都沒有動。請確認連線後再試一次。' };
+    }
+    if (!Array.isArray(notionCards)) {
+      return { ok: false, error: '雲端回應不正常，什麼都沒有動。' };
+    }
+    await mergeBeliefsFromCloud(notionCards);
+    if (beliefUndecryptable.length) {
+      return {
+        ok: false,
+        error: `雲端有 ${beliefUndecryptable.join('、')} 現在就解不開，換密碼會讓它們永遠解不開。請先處理那幾個月再換。`,
+      };
+    }
+    cloudBeliefCards = notionCards.filter(c => String(c.id).startsWith(BELIEF_CARD_PREFIX));
+  }
+
+  const newSalt = crypto.getRandomValues(new Uint8Array(16));
+  const newKey = await deriveBeliefKey(newPass, newSalt);
+  const newVerifier = await encryptBelief(BELIEF_VERIFIER_TEXT, newKey);
+  const ts = Date.now();
+
+  // 本機有的月份，聯集雲端有的月份。時間戳一律推進成 ts，其他裝置才會判定雲端較新而重拉
+  const months = [...new Set([
+    ...beliefs.map(b => beliefMonthKey(b.date)),
+    ...cloudBeliefCards.map(c => String(c.id).slice(BELIEF_CARD_PREFIX.length).replace(/__$/, '')),
+  ])];
+
+  const done = []; // 已經覆蓋掉的雲端卡片原件，回滾時原封不動寫回去
+  const rollback = async () => {
+    onProgress('失敗，正在復原雲端內容...');
+    for (const card of done) {
+      try {
+        await NotionAPI.saveCard(card);
+      } catch (e) {
+        console.error('回滾失敗，這張卡片停在新密文：', card.id, e);
+      }
+    }
+  };
+
+  if (proxy) {
+    for (const month of months) {
+      onProgress(`重新加密 ${month}...`);
+      const before = cloudBeliefCards.find(c => c.id === `${BELIEF_CARD_PREFIX}${month}__`);
+      try {
+        await NotionAPI.saveCard({
+          id: `${BELIEF_CARD_PREFIX}${month}__`,
+          word: '__beliefs__',
+          meaning: await encryptBelief(
+            JSON.stringify(beliefs.filter(b => beliefMonthKey(b.date) === month)), newKey
+          ),
+          example: String(ts),
+          pronunciation: '', category: '', audioUrl: '', lang: '',
+          level: 0, nextReview: 0, createdAt: ts, reviewCount: 0,
+        });
+        if (before) done.push(before);
+      } catch (e) {
+        await rollback();
+        return { ok: false, error: `${month} 重新加密失敗，已復原成原本的內容，密碼沒有更換。` };
+      }
+    }
+
+    // 月卡片全部就位，最後才宣告新金鑰
+    onProgress('更新金鑰...');
+    try {
+      await NotionAPI.saveCard({
+        id: BELIEF_KEY_CARD_ID,
+        word: '__beliefkey__',
+        meaning: JSON.stringify({ salt: bytesToB64(newSalt), verifier: newVerifier }),
+        example: '', pronunciation: '', category: '', audioUrl: '', lang: '',
+        level: 0, nextReview: 0, createdAt: ts, reviewCount: 0,
+      });
+    } catch (e) {
+      await rollback();
+      return { ok: false, error: '金鑰更新失敗，已復原成原本的內容，密碼沒有更換。' };
+    }
+  }
+
+  // 雲端就緒才動本機
+  onProgress('更新這台裝置...');
+  localStorage.setItem(BELIEF_PREV_STORE_KEY, JSON.stringify({
+    at: ts,
+    salt: oldSaltB64,
+    verifier: localStorage.getItem(BELIEF_VERIFIER_KEY),
+    cipher: localStorage.getItem(BELIEF_STORE_KEY),
+  }));
+  beliefKey = newKey;
+  localStorage.setItem(BELIEF_SALT_KEY, bytesToB64(newSalt));
+  localStorage.setItem(BELIEF_VERIFIER_KEY, newVerifier);
+  localStorage.setItem(BELIEF_PASS_KEY, newPass);
+  await saveBeliefsToLocal();
+  const map = loadBeliefUpdatedMap();
+  months.forEach(m => { map[m] = ts; });
+  saveBeliefUpdatedMap(map);
+
+  return { ok: true, months: months.length, entries: beliefs.length };
 }
 
 // 只忘掉這台裝置的密碼，不動任何資料
@@ -1163,23 +1333,25 @@ function lockBeliefs() {
 
 // ── 本機存取（本機也是加密存放）──
 
+// 回傳 'ok' | 'empty' | 'stale'。只有在 verifier 已經通過之後才會被呼叫，所以
+// 解不開不代表密碼錯，而是這份密文屬於上一個金鑰庫（別台裝置換過加密密碼）。
+// 無論如何都不覆寫密文——要不要換掉，由呼叫端拿到雲端資料之後再決定
 async function loadBeliefsFromLocal() {
-  if (!beliefKey) return;
+  if (!beliefKey) return 'empty';
   const raw = localStorage.getItem(BELIEF_STORE_KEY);
-  if (!raw) { beliefs = []; return; }
+  if (!raw) { beliefs = []; return 'empty'; }
   const json = await decryptBelief(raw);
   if (json === null) {
-    // 解不開就維持鎖定，絕不用空陣列覆寫掉還在的密文
-    console.warn('本機集合A資料解密失敗，保留密文');
-    beliefLocked = true;
-    beliefKey = null;
-    return;
+    console.warn('本機集合A密文與目前金鑰對不上，保留密文不動');
+    beliefs = [];
+    return 'stale';
   }
   try {
     beliefs = JSON.parse(json) || [];
   } catch (e) {
     beliefs = [];
   }
+  return 'ok';
 }
 
 async function saveBeliefsToLocal() {
@@ -1230,7 +1402,14 @@ function markBeliefUpdated(monthKey) {
 // 一個月一張隱藏卡片。不整包塞一張是因為 Sheets 單格上限 50,000 字元，
 // 加密後 base64 還會膨脹約 1.37 倍，長文字整包存大約一兩年就會撞頂且無聲截斷
 function pushBeliefsToNotion(monthKeys = null) {
-  if (!getNotionProxyUrl() || !beliefKey) return;
+  if (!getNotionProxyUrl()) return;
+  // 沒有金鑰就加不了密，這一輪推不出去。以前是直接 return，於是「雲端整表被覆寫後
+  // 要補推回去」那種場合會整批日記無聲消失；改成記一個待推旗標，解鎖後由
+  // takePendingBeliefMonths() 撿回來補推。
+  if (!beliefKey) {
+    localStorage.setItem(BELIEF_PENDING_PUSH_KEY, '1');
+    return;
+  }
   clearTimeout(beliefPushTimer);
   beliefPushTimer = setTimeout(async () => {
     const map = loadBeliefUpdatedMap();
@@ -1253,6 +1432,31 @@ function pushBeliefsToNotion(monthKeys = null) {
   }, 600);
 }
 
+// 雲端「看起來是空的」而準備用本機整包覆寫前，先問一句：萬一判斷錯了，日記救得回來嗎？
+// 解鎖時救得回來——覆寫後的 pushBeliefsToNotion() 會把本機的月卡片重新加密推上去。
+// 鎖著、但這台裝置連 salt 與密文都沒有，代表這裡從沒寫過日記，沒有東西可失去。
+// 最危險的是「鎖著卻看得到 salt 或密文」：明知有日記、卻推不回去，一律擋下不覆寫。
+function canRepushBeliefs() {
+  if (beliefKey) return true;
+  return !hasBeliefVault() && !localStorage.getItem(BELIEF_STORE_KEY);
+}
+
+// 取出鎖著時漏推的月份，只認「雲端根本沒有這張月卡片」的那些——雲端已經有的一律
+// 交給 mergeBeliefsFromCloud 逐月比時間戳，這裡不碰，才不會拿舊的本機蓋掉新的雲端。
+// 回傳月份而不直接推，是因為呼叫端要跟 staleMonths 併成同一次 pushBeliefsToNotion：
+// 那支函式內有 clearTimeout 去抖，連續呼叫兩次會被後面那次取消掉前面那次。
+function takePendingBeliefMonths(cloudCards) {
+  if (!beliefKey || !localStorage.getItem(BELIEF_PENDING_PUSH_KEY)) return [];
+  localStorage.removeItem(BELIEF_PENDING_PUSH_KEY);
+  const cloudMonths = new Set(
+    (cloudCards || []).map(c => String(c.id).slice(BELIEF_CARD_PREFIX.length).replace(/__$/, ''))
+  );
+  const missing = [...new Set(beliefs.map(b => beliefMonthKey(b.date)))]
+    .filter(m => !cloudMonths.has(m));
+  if (missing.length) console.warn('補推雲端缺少的集合A 月份：', missing.join('、'));
+  return missing;
+}
+
 // 從同步結果中取出集合A資料。未解鎖時什麼都不做——本機的密文原封不動留著
 async function mergeBeliefsFromCloud(notionCards) {
   // 金鑰卡片先處理：換裝置時本機還沒有 salt，要靠它才解得開
@@ -1261,8 +1465,22 @@ async function mergeBeliefsFromCloud(notionCards) {
     try {
       const { salt, verifier } = JSON.parse(keyCard.meaning || '{}');
       if (salt && verifier) {
+        const saltChanged = salt !== localStorage.getItem(BELIEF_SALT_KEY);
         localStorage.setItem(BELIEF_SALT_KEY, salt);
         localStorage.setItem(BELIEF_VERIFIER_KEY, verifier);
+        // salt 變了代表別台裝置換過加密密碼。手上這把金鑰是舊 salt 導出的，繼續用它
+        // 寫任何東西，推上去就是別台解不開的密文——當場鎖上，要求重新輸入新密碼。
+        // 存的舊密碼也要丟掉，否則下次開 App 又會拿它去自動解鎖
+        if (saltChanged && beliefKey) {
+          console.warn('偵測到加密密碼已在其他裝置更換，鎖定並要求重新輸入');
+          localStorage.removeItem(BELIEF_PASS_KEY);
+          beliefKey = null;
+          beliefLocked = true;
+          beliefs = [];
+          beliefUndecryptable = [];
+          showToast('加密密碼已在其他裝置更換，請重新輸入新密碼');
+          return;
+        }
       }
     } catch (e) {
       console.warn('Belief key card parse failed:', e);
@@ -1304,10 +1522,14 @@ async function mergeBeliefsFromCloud(notionCards) {
   }
 
   if (changed) {
+    // 從雲端解出了真正的內容，本機那份對不上的密文可以放心換掉了
+    beliefLocalStale = false;
     saveBeliefUpdatedMap(map);
     await saveBeliefsToLocal();
   }
-  if (staleMonths.length) pushBeliefsToNotion(staleMonths);
+  // 本機較新的月份，加上之前鎖著推不出去的（例如雲端整表被覆寫後補推不回來），一次推完
+  const months = [...new Set([...staleMonths, ...takePendingBeliefMonths(cloudCards)])];
+  if (months.length) pushBeliefsToNotion(months);
 }
 
 // ── 資料操作 ──
@@ -1324,7 +1546,7 @@ function dateHasBelief(dateKey) {
 
 async function addBelief(dateKey, beliefText, reframeText) {
   const text = (beliefText || '').trim();
-  if (!text || !beliefKey) return null;
+  if (!text || !beliefKey || beliefLocalStale) return null;
   const now = Date.now();
   const item = {
     id: 'belief_' + now + '_' + Math.random().toString(36).slice(2, 7),
@@ -1342,7 +1564,7 @@ async function addBelief(dateKey, beliefText, reframeText) {
 
 async function updateBelief(id, beliefText, reframeText) {
   const item = beliefs.find(b => b.id === id);
-  if (!item || !beliefKey) return false;
+  if (!item || !beliefKey || beliefLocalStale) return false;
   const text = (beliefText || '').trim();
   if (!text) return false;
   item.belief = text;
@@ -1355,7 +1577,7 @@ async function updateBelief(id, beliefText, reframeText) {
 
 async function deleteBelief(id) {
   const item = beliefs.find(b => b.id === id);
-  if (!item) return false;
+  if (!item || beliefLocalStale) return false;
   const month = beliefMonthKey(item.date);
   beliefs = beliefs.filter(b => b.id !== id);
   await saveBeliefsToLocal();
@@ -2507,6 +2729,10 @@ function renderBeliefView() {
   const content = $('#beliefContent');
   if (!lockPanel || !content) return;
 
+  // 鎖著時沒有金鑰，重新加密根本做不了，按鈕就不要出現
+  const passBtn = $('#changeBeliefPassBtn');
+  if (passBtn) passBtn.style.display = beliefLocked ? 'none' : '';
+
   if (beliefLocked) {
     lockPanel.style.display = '';
     content.style.display = 'none';
@@ -2619,8 +2845,13 @@ function initBelief() {
       await createBeliefVault(pass);
       showToast('已建立加密日記');
     } else {
-      const ok = await unlockBeliefs(pass);
-      if (!ok) {
+      const res = await unlockBeliefs(pass);
+      if (res === 'stale') {
+        // 密碼是對的，只是這台裝置存的密文是舊金鑰庫的，內容得從雲端拿
+        warn.textContent = '密碼正確，但這台裝置存的是舊密碼加密的內容，需要連上雲端才能取回。請確認網路後再試一次。';
+        return;
+      }
+      if (!res) {
         warn.textContent = '密碼不正確，資料未受影響。';
         $('#beliefPassInput').value = '';
         return;
@@ -2650,6 +2881,63 @@ function initBelief() {
       setBeliefFilter(chip.dataset.filter);
       renderBeliefView();
     });
+  });
+
+  // ── 更換加密密碼 ──
+  const passModal = $('#beliefPassModal');
+  const passWarn = $('#beliefPassWarn');
+  const passSubmit = $('#beliefPassSubmit');
+  const passFields = ['#beliefOldPass', '#beliefNewPass', '#beliefNewPassConfirm'];
+  const closePassModal = () => {
+    passModal.classList.remove('active');
+    passFields.forEach(sel => { $(sel).value = ''; });
+    passWarn.textContent = '';
+  };
+
+  $('#changeBeliefPassBtn').addEventListener('click', () => {
+    if (beliefLocked) return;
+    passWarn.textContent = '';
+    passModal.classList.add('active');
+    $('#beliefOldPass').focus();
+  });
+  $('#beliefPassCancel').addEventListener('click', closePassModal);
+  passModal.addEventListener('click', e => {
+    // 換密碼進行中不給關：關掉只是關掉畫面，重新加密還在跑
+    if (e.target === passModal && !passSubmit.disabled) closePassModal();
+  });
+
+  const doRotate = async () => {
+    if (passSubmit.disabled) return;
+    const oldPass = $('#beliefOldPass').value;
+    const newPass = $('#beliefNewPass').value;
+    if (newPass !== $('#beliefNewPassConfirm').value) {
+      passWarn.textContent = '兩次輸入的新密碼不一致。';
+      return;
+    }
+    // 連點兩下會推出兩套金鑰，第二套會把第一套剛加密好的月卡片變成孤兒
+    passSubmit.disabled = true;
+    passSubmit.textContent = '更換中...';
+    let res;
+    try {
+      res = await rotateBeliefPassphrase(oldPass, newPass, msg => { passWarn.textContent = msg; });
+    } catch (e) {
+      console.error('更換加密密碼失敗:', e);
+      res = { ok: false, error: '更換過程出錯，請重新整理後確認內容是否完整。' };
+    }
+    passSubmit.disabled = false;
+    passSubmit.textContent = '更換密碼';
+    if (!res.ok) {
+      passWarn.textContent = res.error;
+      return;
+    }
+    closePassModal();
+    showToast(`密碼已更換，${res.entries} 則內容重新加密完成`);
+    renderBeliefView();
+  };
+
+  passSubmit.addEventListener('click', doRotate);
+  $('#beliefNewPassConfirm').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); doRotate(); }
   });
 
   // 分頁的「新增集合A」預設寫今天
