@@ -36,6 +36,10 @@ let beliefLocked = true; // 尚未解鎖時為 true，此時不可寫入，避�
 
 // Language Filter: persisted in localStorage
 let currentLangFilter = localStorage.getItem('crystal_lang_filter') || 'all';
+// 主項目改名：{ 卡片實際存的 lang 值: 顯示名稱 }。只改顯示、不動 card.lang——
+// 內建語系的 lang 值是 TTS 發音的依據（getLangCode 靠它查 BCP-47），改掉就不會唸了；
+// 自訂類別則是幾十張卡片要逐張重寫再逐張推雲端，Apps Script 一次兩三秒根本推不完
+let langAliases = loadLangAliases();
 
 // ── DOM Elements ──
 const $ = (sel) => document.querySelector(sel);
@@ -559,6 +563,7 @@ async function initApp() {
   initBelief();
   initModal();
   initSettings();
+  initLangRename();
   renderAppVersion();
   initAudioActions();
   initSmartInput();
@@ -734,6 +739,9 @@ async function syncFromNotion() {
             habits = notionData.habits || [];
             habitChecks = notionData.habitChecks || {};
             cardChecks = notionData.cardChecks || {};
+            langAliases = notionData.langAliases || {};
+            saveLangAliases();
+            refreshLangSelectLabels();
             saveHabitsToLocal();
             saveHabitChecksToLocal();
             saveCardChecksToLocal();
@@ -982,7 +990,7 @@ function pushHabitsToNotion() {
     const habitsCard = {
       id: HABITS_CARD_ID,
       word: '__habits__',
-      meaning: JSON.stringify({ habits, habitChecks, cardChecks }),
+      meaning: JSON.stringify({ habits, habitChecks, cardChecks, langAliases }),
       example: localStorage.getItem('crystal_habit_updated_at') || String(Date.now()),
       pronunciation: '', category: '', audioUrl: '', lang: '',
       level: 0, nextReview: 0, createdAt: Date.now(), reviewCount: 0,
@@ -1608,14 +1616,85 @@ function getLangCode(lang) {
   return DISPLAY_TO_LANG[lang] || null;     // display name → code, or null for custom
 }
 
+function loadLangAliases() {
+  try {
+    return JSON.parse(localStorage.getItem('crystal_lang_aliases') || '{}') || {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function saveLangAliases() {
+  localStorage.setItem('crystal_lang_aliases', JSON.stringify(langAliases));
+}
+
 function getLangLabel(lang) {
-  return LANG_LABELS[lang] || lang;
+  return langAliases[lang] || LANG_LABELS[lang] || lang;
+}
+
+// 顯示名稱轉回卡片實際要存的 lang 值。使用者在自訂類別欄位看到、打出來的是改名後的
+// 名字，存進去卻必須是原本那個值，否則會變成一個全新的類別、跟舊卡片分家
+function resolveLangInput(text) {
+  const t = (text || '').trim();
+  if (!t) return '';
+  const hit = Object.keys(langAliases).find(k => langAliases[k] === t);
+  return hit || t;
+}
+
+// 由顯示名稱找出卡片實際存的 lang 值（改名時要知道要對哪個 key 下 alias）
+function getLangKeyByLabel(label) {
+  const fromAlias = Object.keys(langAliases).find(k => langAliases[k] === label);
+  if (fromAlias) return fromAlias;
+  const fromCards = cards.find(c => !isMetaCard(c) && c.lang && getLangLabel(c.lang) === label);
+  if (fromCards) return fromCards.lang;
+  const opt = [...($('#inputLang')?.options || [])].find(o => getLangLabel(o.value) === label);
+  return opt ? opt.value : null;
 }
 
 function getAvailableLangs() {
   const seen = new Set();
   cards.forEach(c => { if (c.lang) seen.add(getLangLabel(c.lang)); });
   return [...seen].sort();
+}
+
+// 主項目改名。只寫 alias、不動 card.lang，另外把同名的習慣列一起改名——
+// 習慣列是靠 name === 顯示名稱 跟卡片連動的（syncLangHabitFromCard），
+// 不一起改的話下次打卡會長出一列新的，舊那列連同打卡紀錄就變孤兒
+function renameLangCategory(oldLabel, rawName) {
+  const newLabel = (rawName || '').trim();
+  if (!newLabel) return { ok: false, error: '名稱不能空白。' };
+  if (newLabel === '全部') return { ok: false, error: '「全部」是保留名稱，請換一個。' };
+  if (newLabel === oldLabel) return { ok: true, unchanged: true };
+  if (getAvailableLangs().includes(newLabel)) {
+    return { ok: false, error: `已經有一個「${newLabel}」了，請換一個名稱。` };
+  }
+
+  const key = getLangKeyByLabel(oldLabel);
+  if (!key) return { ok: false, error: '找不到這個主項目，請重新整理後再試。' };
+
+  // 改回原本的名字就把 alias 拿掉，不要在表裡留一筆等於預設值的資料
+  if (newLabel === (LANG_LABELS[key] || key)) delete langAliases[key];
+  else langAliases[key] = newLabel;
+  saveLangAliases();
+
+  const habit = habits.find(h => h.name === oldLabel);
+  if (habit) {
+    habit.name = newLabel;
+    saveHabitsToLocal();
+  }
+  markHabitsUpdated(); // alias 跟習慣資料同一張卡片，這一次就一起推上雲端
+
+  if (currentLangFilter === oldLabel) {
+    currentLangFilter = newLabel;
+    localStorage.setItem('crystal_lang_filter', newLabel);
+  }
+
+  refreshLangSelectLabels();
+  renderLangFilterBars();
+  renderHabitTracker();
+  if ($('#libraryView')?.classList.contains('active')) renderLibrary();
+  if ($('#dashboardView')?.classList.contains('active')) updateDashboard();
+  return { ok: true, newLabel };
 }
 
 function setLangFilter(lang) {
@@ -1641,9 +1720,14 @@ function updateViewTitles() {
 }
 
 function renderLangFilterBars() {
-  updateViewTitles();
   const containers = ['langFilterDashboard', 'langFilterReview', 'langFilterLibrary'];
   const langs = getAvailableLangs();
+  // 別台裝置改過名時，本機存著的篩選值可能已經不存在了，留著會一張卡都篩不出來
+  if (currentLangFilter !== 'all' && !langs.includes(currentLangFilter)) {
+    currentLangFilter = 'all';
+    localStorage.setItem('crystal_lang_filter', 'all');
+  }
+  updateViewTitles();
   const showBar = langs.length > 1;
 
   containers.forEach(id => {
@@ -1665,8 +1749,76 @@ function renderLangFilterBars() {
       btn.className = 'lang-btn' + (currentLangFilter === lang ? ' active' : '');
       btn.textContent = getLangLabel(lang);
       btn.addEventListener('click', () => setLangFilter(lang));
+
+      // 改名的筆只長在選中的那顆上：每顆都掛一支會把整條篩選列撐爆，
+      // 而且手機沒有 hover 可以拿來藏
+      if (currentLangFilter === lang) {
+        const edit = document.createElement('span');
+        edit.className = 'lang-btn-edit';
+        edit.setAttribute('role', 'button');
+        edit.setAttribute('tabindex', '0');
+        edit.setAttribute('aria-label', `重新命名「${lang}」`);
+        edit.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"'
+          + ' stroke-linecap="round" stroke-linejoin="round">'
+          + '<path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" /></svg>';
+        edit.addEventListener('click', e => {
+          e.stopPropagation(); // 不要順手把外層的篩選也觸發一次
+          openLangRenameModal(lang);
+        });
+        edit.addEventListener('keydown', e => {
+          if (e.key !== 'Enter' && e.key !== ' ') return;
+          e.preventDefault();
+          e.stopPropagation();
+          openLangRenameModal(lang);
+        });
+        btn.appendChild(edit);
+      }
       el.appendChild(btn);
     });
+  });
+}
+
+let langRenameTarget = null;
+
+function openLangRenameModal(label) {
+  langRenameTarget = label;
+  $('#langRenameDesc').textContent = `目前名稱：${label}`;
+  $('#langRenameInput').value = label;
+  $('#langRenameWarn').textContent = '';
+  $('#langRenameModal').classList.add('active');
+  // 手機鍵盤要跳出來得等彈窗真的可見，直接 focus 會被忽略
+  setTimeout(() => {
+    const input = $('#langRenameInput');
+    input.focus();
+    input.select();
+  }, 50);
+}
+
+function closeLangRenameModal() {
+  $('#langRenameModal').classList.remove('active');
+  langRenameTarget = null;
+}
+
+function initLangRename() {
+  const modal = $('#langRenameModal');
+  if (!modal) return;
+  const save = () => {
+    if (!langRenameTarget) return;
+    const res = renameLangCategory(langRenameTarget, $('#langRenameInput').value);
+    if (!res.ok) {
+      $('#langRenameWarn').textContent = res.error;
+      return;
+    }
+    const renamed = !res.unchanged;
+    closeLangRenameModal();
+    if (renamed) showToast('已重新命名');
+  };
+  $('#langRenameSave').addEventListener('click', save);
+  $('#langRenameCancel').addEventListener('click', closeLangRenameModal);
+  modal.addEventListener('click', e => { if (e.target === modal) closeLangRenameModal(); });
+  $('#langRenameInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); save(); }
+    if (e.key === 'Escape') closeLangRenameModal();
   });
 }
 
@@ -1681,12 +1833,25 @@ function initLangToggle() {
   // Deprecated toggle no longer used; renderLangFilterBars handles this now
 }
 
+// 把兩個語言下拉選單的顯示文字換成改名後的名稱。option 的 value 一律維持原值，
+// 那是寫進 card.lang 的東西，動了等於把既有卡片分家
+function refreshLangSelectLabels() {
+  ['#inputLang', '#editLang'].forEach(sel => {
+    const el = $(sel);
+    if (!el) return;
+    [...el.options].forEach(o => {
+      if (o.value === '__custom__') return;
+      o.textContent = getLangLabel(o.value);
+    });
+  });
+}
+
 // 讀取語言選單的有效值（處理「自訂類別...」的情況）
 function getLangValue(id) {
   const sel = $(`#${id}`);
   if (!sel) return '';
   if (sel.tagName === 'SELECT' && sel.value === '__custom__') {
-    return $(`#${id}Custom`)?.value.trim() || '';
+    return resolveLangInput($(`#${id}Custom`)?.value || '');
   }
   return sel.value;
 }
@@ -1702,7 +1867,7 @@ function setLangValue(id, value) {
     if (custom) custom.style.display = 'none';
   } else {
     sel.value = '__custom__';
-    if (custom) { custom.style.display = ''; custom.value = value; }
+    if (custom) { custom.style.display = ''; custom.value = getLangLabel(value); }
   }
   sel.dispatchEvent(new Event('change'));
 }
@@ -1724,7 +1889,8 @@ function attachCategoryAutocomplete(input, box) {
   if (!input || !box) return;
   const render = () => {
     const q = input.value.trim().toLowerCase();
-    const cats = getCustomCategories().filter(c =>
+    // 顯示改名後的名稱；使用者選了哪一個由 getLangValue 反查回卡片實際的 lang 值
+    const cats = getCustomCategories().map(getLangLabel).filter(c =>
       c.toLowerCase() !== q && (!q || c.toLowerCase().includes(q))
     );
     if (cats.length === 0) { box.style.display = 'none'; return; }
@@ -1765,13 +1931,14 @@ function initLangSelectCustom(selectId) {
   });
   custom.addEventListener('input', () => {
     if (selectId === 'inputLang') {
-      const val = custom.value.trim();
+      const val = resolveLangInput(custom.value);
       if (val) localStorage.setItem('crystal_last_lang', val);
     }
   });
 }
 
 function updateLanguageContextText() {
+  refreshLangSelectLabels();
   initLangSelectCustom('inputLang');
   // Default add-card lang: restore from localStorage
   const lastLang = localStorage.getItem('crystal_last_lang');

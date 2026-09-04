@@ -32,7 +32,7 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;700&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=1.86">
+    <link rel="stylesheet" href="styles.css?v=1.87">
     <!-- 主題早期初始化：防止 Safari 快取舊 app.js 導致閃白 -->
     <script>
     (function() {
@@ -862,6 +862,22 @@
         </div>
     </div>
 
+    <!-- 主項目改名 -->
+    <div class="modal-overlay" id="langRenameModal">
+        <div class="modal-content lang-rename-modal">
+            <h3>重新命名主項目</h3>
+            <p class="belief-lock-desc" id="langRenameDesc"></p>
+            <input type="text" class="form-input" id="langRenameInput" autocomplete="off"
+                autocapitalize="off" spellcheck="false" maxlength="30">
+            <p class="lang-rename-note">卡片的分類資料不會變動，只換顯示的名稱。習慣追蹤的那一列與新增／編輯卡片的選單都會跟著改。</p>
+            <p class="belief-lock-warn" id="langRenameWarn"></p>
+            <div class="modal-actions">
+                <button type="button" class="modal-btn cancel" id="langRenameCancel">取消</button>
+                <button type="button" class="modal-btn edit-save" id="langRenameSave">儲存</button>
+            </div>
+        </div>
+    </div>
+
     <!-- 更換加密密碼 -->
     <div class="modal-overlay" id="beliefPassModal">
         <div class="modal-content belief-pass-modal">
@@ -1228,8 +1244,8 @@
     <!-- wanakana 改為本地檔案：原本從 unpkg 載，第三方 CDN 或該套件被接管就能在本站
          同源執行任意程式碼、直接讀走 localStorage 裡的資料。tesseract.js 全專案 0 次
          呼叫（OCR 走後端 Google Vision），一併移除 -->
-    <script src="vendor/wanakana-5.3.1.min.js?v=1.86"></script>
-    <script src="app.js?v=1.86"></script>
+    <script src="vendor/wanakana-5.3.1.min.js?v=1.87"></script>
+    <script src="app.js?v=1.87"></script>
 
     <!-- OCR Result Overlay -->
     <div id="ocrOverlay"

@@ -2515,6 +2515,56 @@ select.form-input {
   box-shadow: 0 2px 8px color-mix(in srgb, var(--accent-primary) 40%, transparent);
 }
 
+/* 改名入口：只出現在選中的那顆 chip 裡，靠左邊那條細線跟名稱分開 */
+.lang-btn-edit {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.5rem;
+  padding-left: 0.5rem;
+  border-left: 1px solid rgba(255, 255, 255, 0.35);
+  opacity: 0.75;
+  cursor: pointer;
+  transition: opacity var(--transition-fast);
+}
+
+.lang-btn-edit svg {
+  width: 12px;
+  height: 12px;
+  display: block;
+}
+
+.lang-btn-edit:hover,
+.lang-btn-edit:focus-visible {
+  opacity: 1;
+  outline: none;
+}
+
+.lang-rename-modal {
+  max-width: 380px;
+  text-align: left;
+}
+
+.lang-rename-modal h3 {
+  font-size: 1.1rem;
+  color: var(--text-primary);
+  margin-bottom: 0.5rem;
+}
+
+.lang-rename-modal .form-input {
+  width: 100%;
+}
+
+.lang-rename-note {
+  margin-top: 0.75rem;
+  font-size: 0.78rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.lang-rename-modal .belief-lock-warn {
+  text-align: left;
+}
+
 /* ── Audio Action Buttons ── */
 .audio-action-btn {
   display: inline-flex;
