@@ -1014,6 +1014,12 @@ const BELIEF_UPDATED_KEY = 'crystal_belief_updated_at';
 const BELIEF_PENDING_PUSH_KEY = 'crystal_belief_pending_push'; // 鎖著時漏推的日記，解鎖後要補
 const BELIEF_PREV_STORE_KEY = 'crystal_beliefs_prev'; // 換密碼前的舊密文備份，只留這台裝置
 const BELIEF_PASS_KEY = 'crystal_belief_pass';
+const BELIEF_UNLOCK_AT_KEY = 'crystal_belief_unlock_at'; // 這次解鎖的時間，用來算逾時
+// 解鎖後密碼會留在 localStorage 供自動解鎖用，等於這台裝置從此永久解鎖——手機被拿走
+// 就直接看得到內容。改成「最後一次操作起算一小時」後強制忘掉密碼，要再看得重打一次
+const BELIEF_UNLOCK_TTL_MS = 60 * 60 * 1000;
+// 續期的節流間隔：距離上次寫入不到這個值就跳過，反正期限還有五十幾分鐘
+const BELIEF_TOUCH_THROTTLE_MS = 60 * 1000;
 const BELIEF_SALT_KEY = 'crystal_belief_salt';
 const BELIEF_VERIFIER_KEY = 'crystal_belief_verifier';
 const BELIEF_VERIFIER_TEXT = 'crystal-belief-ok';
@@ -1026,6 +1032,12 @@ const BELIEF_MIN_PASS_LENGTH = 12;
 
 let beliefKey = null; // 解鎖後快取的 CryptoKey，只存在記憶體
 let beliefPushTimer = null;
+let beliefAutoLockTimer = null;
+// 這次為什麼是鎖著的：'expiry' 逾時、'manual' 使用者自己按的、null 從來沒解鎖過。
+// 解鎖面板的說明要據此改寫，否則自己鎖完會看到「這台裝置還沒解鎖過」而對不上
+let beliefLockReason = null;
+// 上次把解鎖時間寫進 localStorage 的時刻。每個按鍵都寫一次太吵，用它做節流
+let beliefLastTouchAt = 0;
 // 是否已經跟雲端確認過「有沒有既存的金鑰卡片」。在確認之前絕不能讓使用者建立新金鑰庫：
 // 建立會產生新的 salt 並覆寫雲端的 __crystal_belief_key__，舊的月卡片就永遠解不開了
 let beliefCloudChecked = false;
@@ -1102,6 +1114,76 @@ function hasBeliefPassphrase() {
   return !!localStorage.getItem(BELIEF_PASS_KEY);
 }
 
+// ── 解鎖逾時 ──
+
+// 記住密碼並重新起算一小時。只有使用者真的輸入過密碼才呼叫；
+// 自動解鎖不會走這裡，否則每次開 App 都續期一小時，等於永不逾時
+function storeBeliefPass(passphrase) {
+  localStorage.setItem(BELIEF_PASS_KEY, passphrase);
+  markBeliefUnlockAt(Date.now());
+  beliefLockReason = null;
+  scheduleBeliefAutoLock();
+}
+
+function markBeliefUnlockAt(ts) {
+  localStorage.setItem(BELIEF_UNLOCK_AT_KEY, String(ts));
+  beliefLastTouchAt = ts;
+}
+
+// 有操作就把一小時重新起算（滑動視窗）。只認集合A 相關的操作——在別的分頁翻卡片
+// 三小時也不該讓日記一直開著；真正在寫日記的人不會被中途鎖掉
+function touchBeliefUnlock() {
+  if (beliefLocked) return;
+  if (checkBeliefUnlockExpiry()) return; // 這一刻剛好已經過期，不能反而被續期救回來
+  // 每個按鍵都寫 localStorage 太吵；節流間隔內不動，反正期限還很遠
+  if (Date.now() - beliefLastTouchAt < BELIEF_TOUCH_THROTTLE_MS) return;
+  markBeliefUnlockAt(Date.now());
+  scheduleBeliefAutoLock();
+}
+
+function forgetBeliefPass() {
+  localStorage.removeItem(BELIEF_PASS_KEY);
+  localStorage.removeItem(BELIEF_UNLOCK_AT_KEY);
+  beliefLastTouchAt = 0;
+  clearTimeout(beliefAutoLockTimer);
+  beliefAutoLockTimer = null;
+}
+
+// 距離逾時還剩幾毫秒。沒有時間戳的一律當作已逾時——那是舊版留下的密碼，
+// 無從得知是何時解鎖的，寧可要求重打一次
+function beliefUnlockRemainingMs() {
+  const at = Number(localStorage.getItem(BELIEF_UNLOCK_AT_KEY)) || 0;
+  if (!at) return 0;
+  return Math.max(0, at + BELIEF_UNLOCK_TTL_MS - Date.now());
+}
+
+function scheduleBeliefAutoLock() {
+  clearTimeout(beliefAutoLockTimer);
+  beliefAutoLockTimer = null;
+  if (beliefLocked) return;
+  // 背景分頁的 setTimeout 會被延後甚至不跑（iOS 主畫面 web app 更是走 bfcache），
+  // 所以回到前景時另外由 checkBeliefUnlockExpiry 補一刀，這支只顧「App 一直開著」
+  beliefAutoLockTimer = setTimeout(checkBeliefUnlockExpiry, beliefUnlockRemainingMs() + 1000);
+}
+
+// 已逾時就地上鎖並重繪。回傳是否真的鎖了
+function checkBeliefUnlockExpiry() {
+  if (beliefLocked || beliefUnlockRemainingMs() > 0) return false;
+  lockBeliefsAndRefresh('expiry', '集合A 已逾時上鎖，請重新輸入密碼');
+  return true;
+}
+
+// 上鎖並把畫面收乾淨。逾時與手動上鎖走同一條路，差別只在提示文字
+function lockBeliefsAndRefresh(reason, toast) {
+  lockBeliefs();
+  beliefLockReason = reason;
+  closeBeliefModal();
+  renderHabitTracker(); // 有日記的圓點要跟著消失
+  // renderBeliefView 內也會檢查逾時，但此時 beliefLocked 已是 true，不會再遞迴進來
+  if ($('#beliefView')?.classList.contains('active')) renderBeliefView();
+  showToast(toast);
+}
+
 // 這台裝置是否已經看過金鑰卡片（決定解鎖畫面要顯示「設定密碼」還是「輸入密碼」）
 function hasBeliefVault() {
   return !!localStorage.getItem(BELIEF_SALT_KEY);
@@ -1122,9 +1204,9 @@ async function createBeliefVault(passphrase) {
 
   localStorage.setItem(BELIEF_SALT_KEY, bytesToB64(salt));
   localStorage.setItem(BELIEF_VERIFIER_KEY, verifier);
-  localStorage.setItem(BELIEF_PASS_KEY, passphrase);
   beliefKey = key;
   beliefLocked = false;
+  storeBeliefPass(passphrase);
 
   pushBeliefKeyCard();
   return true;
@@ -1139,9 +1221,9 @@ async function unlockBeliefs(passphrase) {
   const key = await deriveBeliefKey(passphrase, b64ToBytes(saltB64));
   if (!(await verifyBeliefKey(key))) return false;
 
-  localStorage.setItem(BELIEF_PASS_KEY, passphrase);
   beliefKey = key;
   beliefLocked = false;
+  storeBeliefPass(passphrase);
   beliefLocalStale = (await loadBeliefsFromLocal()) === 'stale';
   await pullBeliefsAfterUnlock();
 
@@ -1184,6 +1266,8 @@ async function tryAutoUnlockBeliefs() {
   const pass = localStorage.getItem(BELIEF_PASS_KEY);
   const saltB64 = localStorage.getItem(BELIEF_SALT_KEY);
   if (!pass || !saltB64) return false;
+  // 上次解鎖已超過一小時（或是舊版留下、沒有時間戳的密碼）：忘掉它，要求重新輸入
+  if (beliefUnlockRemainingMs() <= 0) { forgetBeliefPass(); return false; }
   try {
     const key = await deriveBeliefKey(pass, b64ToBytes(saltB64));
     if (!(await verifyBeliefKey(key))) return false;
@@ -1200,6 +1284,8 @@ async function tryAutoUnlockBeliefs() {
         return false;
       }
     }
+    // 沿用原本的解鎖時間，不重新起算——自動解鎖不算「使用者又證明了一次身分」
+    scheduleBeliefAutoLock();
     return true;
   } catch (e) {
     console.warn('Belief auto-unlock failed:', e);
@@ -1322,7 +1408,7 @@ async function rotateBeliefPassphrase(oldPass, newPass, onProgress = () => {}) {
   beliefKey = newKey;
   localStorage.setItem(BELIEF_SALT_KEY, bytesToB64(newSalt));
   localStorage.setItem(BELIEF_VERIFIER_KEY, newVerifier);
-  localStorage.setItem(BELIEF_PASS_KEY, newPass);
+  storeBeliefPass(newPass);
   await saveBeliefsToLocal();
   const map = loadBeliefUpdatedMap();
   months.forEach(m => { map[m] = ts; });
@@ -1333,7 +1419,15 @@ async function rotateBeliefPassphrase(oldPass, newPass, onProgress = () => {}) {
 
 // 只忘掉這台裝置的密碼，不動任何資料
 function lockBeliefs() {
-  localStorage.removeItem(BELIEF_PASS_KEY);
+  forgetBeliefPass();
+  // 排程中的推送（去抖 600ms）在鎖上之後就加不了密，先取消。本機的異動時間戳仍比雲端新，
+  // 下次解鎖同步時由 mergeBeliefsFromCloud 的 staleMonths 補推；雲端根本沒有那張月卡片
+  // 的情形不在 staleMonths 裡，所以另外記待推旗標交給 takePendingBeliefMonths
+  if (beliefPushTimer) {
+    clearTimeout(beliefPushTimer);
+    beliefPushTimer = null;
+    localStorage.setItem(BELIEF_PENDING_PUSH_KEY, '1');
+  }
   beliefKey = null;
   beliefLocked = true;
   beliefs = [];
@@ -1481,7 +1575,7 @@ async function mergeBeliefsFromCloud(notionCards) {
         // 存的舊密碼也要丟掉，否則下次開 App 又會拿它去自動解鎖
         if (saltChanged && beliefKey) {
           console.warn('偵測到加密密碼已在其他裝置更換，鎖定並要求重新輸入');
-          localStorage.removeItem(BELIEF_PASS_KEY);
+          forgetBeliefPass();
           beliefKey = null;
           beliefLocked = true;
           beliefs = [];
@@ -2834,6 +2928,7 @@ function beliefFormHtml(item, dateKey) {
 // ── 彈窗（從習慣追蹤點日期進來）──
 
 function openBeliefModal(dateKey) {
+  checkBeliefUnlockExpiry();
   if (beliefLocked) {
     // 鎖著就先把人帶去分頁解鎖，彈窗裡再塞一套解鎖流程只是重複
     switchView('belief');
@@ -2896,9 +2991,14 @@ function renderBeliefView() {
   const content = $('#beliefContent');
   if (!lockPanel || !content) return;
 
-  // 鎖著時沒有金鑰，重新加密根本做不了，按鈕就不要出現
+  // 背景時 setTimeout 未必跑得到，切進這一頁時補檢查一次逾時
+  checkBeliefUnlockExpiry();
+
+  // 鎖著時沒有金鑰，重新加密根本做不了，按鈕就不要出現；已經鎖著也不必再給上鎖鍵
   const passBtn = $('#changeBeliefPassBtn');
   if (passBtn) passBtn.style.display = beliefLocked ? 'none' : '';
+  const lockBtn = $('#lockBeliefBtn');
+  if (lockBtn) lockBtn.style.display = beliefLocked ? 'none' : '';
 
   if (beliefLocked) {
     lockPanel.style.display = '';
@@ -2921,8 +3021,12 @@ function renderBeliefView() {
 
     $('#beliefPassInput').style.display = '';
     $('#beliefLockTitle').textContent = existing ? '輸入加密密碼' : '設定加密密碼';
+    const lockedDesc = {
+      expiry: '閒置超過一小時已自動上鎖，內容原封不動。輸入密碼即可繼續。',
+      manual: '已上鎖，內容原封不動。輸入密碼即可繼續。',
+    };
     $('#beliefLockDesc').textContent = existing
-      ? '這台裝置還沒解鎖過。輸入你當初設定的密碼即可讀取內容。'
+      ? (lockedDesc[beliefLockReason] || '這台裝置還沒解鎖過。輸入你當初設定的密碼即可讀取內容。')
       : `所有內容會在這台裝置上加密後才儲存與上傳，雲端看到的是一串亂碼。密碼至少 ${BELIEF_MIN_PASS_LENGTH} 個字，建議用一句只有你想得到的話。`;
     $('#beliefLockWarn').textContent = existing
       ? ''
@@ -3039,6 +3143,28 @@ function initBelief() {
     e.preventDefault();
     if (hasBeliefVault()) doUnlock();
     else $('#beliefPassConfirm').focus();
+  });
+
+  // ── 逾時上鎖與手動上鎖 ──
+  // 背景中的計時器不可靠（iOS 主畫面 web app 從背景復原還會走 bfcache），回到前景補檢查
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') checkBeliefUnlockExpiry();
+  });
+  window.addEventListener('pageshow', () => checkBeliefUnlockExpiry());
+
+  // 在日記分頁或彈窗裡的任何動作都算「還在用」，把一小時重新起算。
+  // 用捕獲階段掛在容器上，就不必在每個既有 handler 裡各補一行、日後新增的按鈕也自動涵蓋。
+  // renderBeliefView 本身不能當作續期依據——它也會被背景同步呼叫，那樣永遠不會逾時
+  ['#beliefView', '#beliefModal'].forEach(sel => {
+    const el = $(sel);
+    if (!el) return;
+    ['pointerdown', 'keydown', 'input'].forEach(ev =>
+      el.addEventListener(ev, touchBeliefUnlock, true));
+  });
+
+  $('#lockBeliefBtn').addEventListener('click', () => {
+    if (beliefLocked) return;
+    lockBeliefsAndRefresh('manual', '已上鎖，內容仍完整保存');
   });
 
   // ── 搜尋與篩選 ──
@@ -3659,7 +3785,20 @@ function initCategorySuggestions() {
 }
 
 function initLibrary() {
-  $('#searchInput').addEventListener('input', () => { libraryShowAll = false; renderLibrary(); });
+  const searchInput = $('#searchInput');
+  const clearSearchBtn = $('#clearSearchInput');
+  searchInput.addEventListener('input', () => {
+    clearSearchBtn.style.display = searchInput.value ? 'flex' : 'none';
+    libraryShowAll = false;
+    renderLibrary();
+  });
+  clearSearchBtn.addEventListener('click', () => {
+    searchInput.value = '';
+    clearSearchBtn.style.display = 'none';
+    libraryShowAll = false;
+    searchInput.focus();
+    renderLibrary();
+  });
   const filterInput = $('#filterCategory');
   const clearBtn = $('#clearFilterCategory');
   const wrapper = filterInput.closest('.filter-select-wrapper');

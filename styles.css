@@ -1436,6 +1436,24 @@ select.form-input {
   color: var(--text-muted);
 }
 
+/* 清除搜尋字句：跟著 .search-box 的 flex 排在輸入框後面，不用絕對定位才不會蓋到文字 */
+.search-clear-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.2rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.search-clear-btn:hover {
+  color: var(--text-primary);
+}
+
 .filter-select::-webkit-calendar-picker-indicator {
   display: none !important;
   opacity: 0;
@@ -3280,7 +3298,16 @@ select.form-input {
   background: var(--gradient-primary);
 }
 
-/* 更換加密密碼：放在標題列，不搶「新增集合A」的主要動作位置 */
+/* 標題右側的兩顆按鈕（立即上鎖／更換加密密碼）。窄畫面時 view-header 會轉直排，
+   這裡自己再排一列，兩顆才不會各佔一行 */
+.belief-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* 立即上鎖／更換加密密碼：放在標題列，不搶「新增集合A」的主要動作位置 */
 .belief-pass-btn {
   display: flex;
   align-items: center;
