@@ -2087,10 +2087,17 @@ select.form-input {
   margin-bottom: 0.75rem;
 }
 
+/* flex 子元素預設 min-width: auto，會被沒空白的長字串（例如網址）撐寬，把右邊按鈕擠出卡片 */
+.library-card-title {
+  flex: 1;
+  min-width: 0;
+}
+
 .library-card-word {
   font-size: 1.25rem;
   font-weight: 700;
   color: var(--text-primary);
+  overflow-wrap: anywhere;
 }
 
 .library-card-pronunciation {
@@ -2098,11 +2105,13 @@ select.form-input {
   color: var(--text-muted);
   font-style: italic;
   margin-top: 0.15rem;
+  overflow-wrap: anywhere;
 }
 
 .library-card-actions {
   display: flex;
   gap: 0.25rem;
+  flex-shrink: 0;
 }
 
 .card-action-btn {

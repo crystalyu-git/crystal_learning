@@ -3900,7 +3900,7 @@ function renderLibrary() {
     return `
       <div class="library-card ${levelClass}" data-id="${card.id}">
         <div class="library-card-header">
-          <div>
+          <div class="library-card-title">
             <div class="library-card-word">${escapeHtml(card.word)}</div>
             ${card.pronunciation ? `<div class="library-card-pronunciation">${escapeHtml(card.pronunciation)}</div>` : ''}
           </div>
