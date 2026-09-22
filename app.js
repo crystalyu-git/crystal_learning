@@ -40,6 +40,9 @@ let currentLangFilter = localStorage.getItem('crystal_lang_filter') || 'all';
 // 內建語系的 lang 值是 TTS 發音的依據（getLangCode 靠它查 BCP-47），改掉就不會唸了；
 // 自訂類別則是幾十張卡片要逐張重寫再逐張推雲端，Apps Script 一次兩三秒根本推不完
 let langAliases = loadLangAliases();
+// 主項目排序：存卡片實際的 lang 值（不是顯示名稱），這樣改名不會把排序打散。
+// 不在表裡的項目排在後面、照字母序，跟改版前的行為一致
+let langOrder = loadLangOrder();
 
 // ── DOM Elements ──
 const $ = (sel) => document.querySelector(sel);
@@ -564,6 +567,7 @@ async function initApp() {
   initModal();
   initSettings();
   initLangRename();
+  initLangChipDrag();
   renderAppVersion();
   initAudioActions();
   initSmartInput();
@@ -740,7 +744,9 @@ async function syncFromNotion() {
             habitChecks = notionData.habitChecks || {};
             cardChecks = notionData.cardChecks || {};
             langAliases = notionData.langAliases || {};
+            langOrder = Array.isArray(notionData.langOrder) ? notionData.langOrder : [];
             saveLangAliases();
+            saveLangOrder();
             refreshLangSelectLabels();
             saveHabitsToLocal();
             saveHabitChecksToLocal();
@@ -990,7 +996,7 @@ function pushHabitsToNotion() {
     const habitsCard = {
       id: HABITS_CARD_ID,
       word: '__habits__',
-      meaning: JSON.stringify({ habits, habitChecks, cardChecks, langAliases }),
+      meaning: JSON.stringify({ habits, habitChecks, cardChecks, langAliases, langOrder }),
       example: localStorage.getItem('crystal_habit_updated_at') || String(Date.now()),
       pronunciation: '', category: '', audioUrl: '', lang: '',
       level: 0, nextReview: 0, createdAt: Date.now(), reviewCount: 0,
@@ -1722,6 +1728,19 @@ function saveLangAliases() {
   localStorage.setItem('crystal_lang_aliases', JSON.stringify(langAliases));
 }
 
+function loadLangOrder() {
+  try {
+    const v = JSON.parse(localStorage.getItem('crystal_lang_order') || '[]');
+    return Array.isArray(v) ? v : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveLangOrder() {
+  localStorage.setItem('crystal_lang_order', JSON.stringify(langOrder));
+}
+
 function getLangLabel(lang) {
   return langAliases[lang] || LANG_LABELS[lang] || lang;
 }
@@ -1746,9 +1765,23 @@ function getLangKeyByLabel(label) {
 }
 
 function getAvailableLangs() {
-  const seen = new Set();
-  cards.forEach(c => { if (c.lang) seen.add(getLangLabel(c.lang)); });
-  return [...seen].sort();
+  const keyByLabel = new Map(); // 顯示名稱 → 卡片實際的 lang 值；排序是記在後者身上的
+  cards.forEach(c => {
+    if (!c.lang) return;
+    const label = getLangLabel(c.lang);
+    if (!keyByLabel.has(label)) keyByLabel.set(label, c.lang);
+  });
+  const rank = label => {
+    const i = langOrder.indexOf(keyByLabel.get(label));
+    return i === -1 ? Infinity : i;
+  };
+  return [...keyByLabel.keys()].sort((a, b) => {
+    const ra = rank(a), rb = rank(b);
+    if (ra !== rb) return ra - rb; // 兩邊都沒排過時 Infinity 相等，落到下面的字母序
+    // 刻意用預設的字元碼比較而不是 localeCompare：改版前就是 [...seen].sort()，
+    // localeCompare 會把「한국어」排到「日本語」前面，等於沒人要求就把現有的順序洗過一次
+    return a < b ? -1 : a > b ? 1 : 0;
+  });
 }
 
 // 主項目改名。只寫 alias、不動 card.lang，另外把同名的習慣列一起改名——
@@ -1813,6 +1846,115 @@ function updateViewTitles() {
   if (rvTitle) rvTitle.innerHTML = `複習卡片 ${cardSvg} - ${langLabel}`;
 }
 
+// ── 主項目拖曳排序 ──
+// 桌機滑鼠移幾 px 就開始拖；手機一定要先長按，否則整條列會變得沒辦法正常點選與捲頁。
+// 「全部」不給拖也不當落點（沒有 data-lang），它永遠是第一顆
+const LANG_DRAG_HOLD_MS = 350;
+const LANG_DRAG_SLOP = 8;
+let langDrag = null; // { btn, bar, pointerId, startX, startY, holdTimer, active }
+let langDragSuppressClick = false;
+
+function attachLangChipDrag(btn, bar) {
+  btn.addEventListener('pointerdown', e => {
+    if (e.button !== undefined && e.button !== 0) return;
+    if (e.target.closest('.lang-btn-edit')) return; // 改名那支筆不算拖曳
+    if (bar.querySelectorAll('.lang-btn[data-lang]').length < 2) return;
+    langDragSuppressClick = false;
+    langDrag = {
+      btn, bar, pointerId: e.pointerId,
+      startX: e.clientX, startY: e.clientY,
+      active: false, holdTimer: null,
+    };
+    if (e.pointerType === 'mouse') return; // 滑鼠靠位移觸發，不必等長按
+    langDrag.holdTimer = setTimeout(startLangDrag, LANG_DRAG_HOLD_MS);
+  });
+}
+
+function startLangDrag() {
+  if (!langDrag || langDrag.active) return;
+  langDrag.active = true;
+  langDrag.btn.classList.add('is-dragging');
+  langDrag.bar.classList.add('is-reordering');
+  try { langDrag.btn.setPointerCapture(langDrag.pointerId); } catch (e) {}
+  if (navigator.vibrate) navigator.vibrate(10);
+}
+
+function cancelLangDrag() {
+  if (!langDrag) return;
+  clearTimeout(langDrag.holdTimer);
+  langDrag = null;
+}
+
+function onLangDragMove(e) {
+  if (!langDrag || e.pointerId !== langDrag.pointerId) return;
+  if (!langDrag.active) {
+    if (Math.hypot(e.clientX - langDrag.startX, e.clientY - langDrag.startY) <= LANG_DRAG_SLOP) return;
+    // 長按還沒滿就先移開手指，那是在捲頁不是要拖
+    if (e.pointerType !== 'mouse') { cancelLangDrag(); return; }
+    startLangDrag();
+  }
+  e.preventDefault();
+  const over = document.elementFromPoint(e.clientX, e.clientY);
+  const target = over && over.closest('.lang-btn[data-lang]');
+  if (!target || target === langDrag.btn || target.parentElement !== langDrag.bar) return;
+  const rect = target.getBoundingClientRect();
+  const after = e.clientX > rect.left + rect.width / 2;
+  langDrag.bar.insertBefore(langDrag.btn, after ? target.nextSibling : target);
+  langDrag.changed = true;
+}
+
+function onLangDragEnd(e) {
+  if (!langDrag || (e && e.pointerId !== langDrag.pointerId)) return;
+  const { btn, bar, active, changed, pointerId, holdTimer } = langDrag;
+  clearTimeout(holdTimer);
+  langDrag = null;
+  btn.classList.remove('is-dragging');
+  bar.classList.remove('is-reordering');
+  try { btn.releasePointerCapture(pointerId); } catch (err) {}
+  // 長按了卻沒真的拖動（手機上很常見）就當作一般點選，不要吃掉那一下、也不要
+  // 跳一個「順序已更新」出來說謊
+  if (!active || !changed) { langDragSuppressClick = false; return; }
+  langDragSuppressClick = true; // 拖完放開手會補一發 click，不擋的話順手把篩選也換掉
+  commitLangOrderFromDom(bar);
+  setTimeout(() => { langDragSuppressClick = false; }, 0);
+}
+
+// 以畫面上的順序回寫 langOrder。存的是卡片實際的 lang 值而不是顯示名稱，
+// 這樣改名不會把排序打散（別名跟排序本來就記在同一個 key 上）
+function commitLangOrderFromDom(bar) {
+  const keys = [...bar.querySelectorAll('.lang-btn[data-lang]')]
+    .map(el => getLangKeyByLabel(el.dataset.lang))
+    .filter(Boolean);
+  // 這條列上沒出現的項目（例如別台裝置才有的類別）接在後面，不要被這次拖曳洗掉
+  const rest = langOrder.filter(k => !keys.includes(k));
+  langOrder = [...keys, ...rest];
+  saveLangOrder();
+  markHabitsUpdated(); // 排序跟別名、習慣共用 __crystal_habits__ 那張隱藏卡片
+  renderLangFilterBars();
+  showToast('順序已更新');
+}
+
+function initLangChipDrag() {
+  document.addEventListener('pointermove', onLangDragMove, { passive: false });
+  document.addEventListener('pointerup', onLangDragEnd);
+  document.addEventListener('pointercancel', onLangDragEnd);
+  // 長按進入拖曳後，手指再移動不能讓頁面跟著捲，也不能跳出長按選單
+  document.addEventListener('touchmove', e => {
+    if (langDrag && langDrag.active) e.preventDefault();
+  }, { passive: false });
+  document.addEventListener('contextmenu', e => {
+    if (langDrag && langDrag.active) e.preventDefault();
+  });
+}
+
+// 手機要長按才拖得動，不講一次不會有人發現
+function maybeHintLangOrder() {
+  if (localStorage.getItem('crystal_lang_order_hint')) return;
+  if (getAvailableLangs().length < 2) return;
+  localStorage.setItem('crystal_lang_order_hint', '1');
+  showToast('提示：長按主項目可以拖曳調整順序', 4000);
+}
+
 function renderLangFilterBars() {
   const containers = ['langFilterDashboard', 'langFilterReview', 'langFilterLibrary'];
   const langs = getAvailableLangs();
@@ -1842,7 +1984,13 @@ function renderLangFilterBars() {
       const btn = document.createElement('button');
       btn.className = 'lang-btn' + (currentLangFilter === lang ? ' active' : '');
       btn.textContent = getLangLabel(lang);
-      btn.addEventListener('click', () => setLangFilter(lang));
+      btn.dataset.lang = lang; // 有這個屬性才拖得動、才能當落點（「全部」沒有）
+      btn.title = '拖曳可以調整順序';
+      btn.addEventListener('click', () => {
+        if (langDragSuppressClick) return; // 剛拖完的那一發 click 不算選取
+        setLangFilter(lang);
+      });
+      attachLangChipDrag(btn, el);
 
       // 改名的筆只長在選中的那顆上：每顆都掛一支會把整條篩選列撐爆，
       // 而且手機沒有 hover 可以拿來藏
@@ -3832,6 +3980,7 @@ function renderLibrary() {
   const filterCat = $('#filterCategory').value;
 
   const activeCards = getCardsByLang();
+  maybeHintLangOrder();
 
   // Update category filter
   updateCategoryFilter(activeCards);

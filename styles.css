@@ -2542,6 +2542,28 @@ select.form-input {
   box-shadow: 0 2px 8px color-mix(in srgb, var(--accent-primary) 40%, transparent);
 }
 
+/* 拖曳排序：手機是長按才啟動的，所以平常這些 chip 仍要能正常點選與捲頁 */
+.lang-btn[data-lang] {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.lang-filter-bar.is-reordering {
+  cursor: grabbing;
+}
+
+.lang-filter-bar.is-reordering .lang-btn {
+  transition: none; /* 拖曳時整列會即時重排，補間動畫只會讓位置看起來在飄 */
+}
+
+.lang-btn.is-dragging {
+  transform: scale(1.06);
+  opacity: 0.9;
+  cursor: grabbing;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.28);
+}
+
 /* 改名入口：只出現在選中的那顆 chip 裡，靠左邊那條細線跟名稱分開 */
 .lang-btn-edit {
   display: inline-flex;
