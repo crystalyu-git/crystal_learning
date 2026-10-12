@@ -32,7 +32,7 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;700&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=1.90">
+    <link rel="stylesheet" href="styles.css?v=1.98">
     <!-- 主題早期初始化：防止 Safari 快取舊 app.js 導致閃白 -->
     <script>
     (function() {
@@ -141,6 +141,14 @@
                     <line x1="10" y1="20" x2="14" y2="20" />
                 </svg>
                 <span>集合A｜非A</span>
+            </button>
+            <button class="nav-btn" data-view="stay" id="navStay">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="9" />
+                    <circle cx="12" cy="12" r="3.5" fill="currentColor" stroke="none" />
+                </svg>
+                <span>在日天數</span>
             </button>
             <div class="nav-divider"></div>
 
@@ -854,6 +862,61 @@
             </div>
         </section>
 
+        <!-- ==================== STAY COUNTER VIEW ==================== -->
+        <section class="view" id="stayView">
+            <div class="view-header">
+                <div>
+                    <h1 class="view-title">在日天數</h1>
+                    <p class="view-subtitle" id="staySubtitle" style="display:none">每年度 9/1 到隔年 8/31，扣掉登記的行程後，在日本會不會超過 270 天</p>
+                </div>
+                <div class="stay-year-bar" id="stayYearBar">
+                    <button type="button" class="stay-year-btn" id="stayPrevYear" aria-label="上一年度">‹</button>
+                    <span class="stay-year-label" id="stayYearLabel"></span>
+                    <button type="button" class="stay-year-btn" id="stayNextYear" aria-label="下一年度">›</button>
+                </div>
+            </div>
+
+            <!-- 行程跟集合A 日記共用金鑰庫，未解鎖時只顯示這一塊 -->
+            <div class="belief-lock" id="stayLockPanel" style="display:none">
+                <div class="belief-lock-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                    </svg>
+                </div>
+                <h3>行程已加密</h3>
+                <p class="belief-lock-desc" id="stayLockDesc"></p>
+                <button type="button" class="modal-btn confirm" id="stayUnlockBtn">前往「集合A｜非A」解鎖</button>
+            </div>
+
+            <div id="stayContent" style="display:none">
+            <p class="belief-decrypt-warn" id="stayDecryptWarn" style="display:none"></p>
+            <div class="stay-summary" id="staySummary"></div>
+
+            <div class="stay-table-scroll">
+                <table class="stay-table" id="stayTable"></table>
+            </div>
+
+            <form class="stay-form" id="stayForm">
+                <select id="stayPlace" class="form-input" aria-label="地點">
+                    <option value="TW">台灣</option>
+                    <option value="OT">其他</option>
+                </select>
+                <input type="date" id="stayStart" class="form-input" aria-label="開始日" required>
+                <span class="stay-form-sep">～</span>
+                <input type="date" id="stayEnd" class="form-input" aria-label="結束日" required>
+                <button type="submit" class="habit-add-btn">新增行程</button>
+            </form>
+            <label class="stay-travel-toggle">
+                <input type="checkbox" id="stayTravelJP">
+                <span>出發日與回程日算在日本</span>
+            </label>
+
+            <div class="stay-list" id="stayList"></div>
+            </div>
+        </section>
+
     </main>
 
     <!-- Belief Journal Modal（從習慣追蹤點日期開啟）-->
@@ -1255,8 +1318,8 @@
     <!-- wanakana 改為本地檔案：原本從 unpkg 載，第三方 CDN 或該套件被接管就能在本站
          同源執行任意程式碼、直接讀走 localStorage 裡的資料。tesseract.js 全專案 0 次
          呼叫（OCR 走後端 Google Vision），一併移除 -->
-    <script src="vendor/wanakana-5.3.1.min.js?v=1.90"></script>
-    <script src="app.js?v=1.90"></script>
+    <script src="vendor/wanakana-5.3.1.min.js?v=1.98"></script>
+    <script src="app.js?v=1.98"></script>
 
     <!-- OCR Result Overlay -->
     <div id="ocrOverlay"

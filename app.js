@@ -44,6 +44,20 @@ let langAliases = loadLangAliases();
 // 不在表裡的項目排在後面、照字母序，跟改版前的行為一致
 let langOrder = loadLangOrder();
 
+// 在日天數：每年度 9/1～隔年 8/31 在日本的天數有沒有超過 270 天。
+// 行程只存使用者自己的裝置與雲端，不寫進原始碼（這個 repo 是公開的）
+const STAY_PLACES = { TW: '台灣', OT: '其他' };
+// 排除法：只登記離開日本的行程，沒登記到的日子一律算在日本
+// 行程跟集合A 日記共用同一個金鑰庫：加密後才落地，stays 是解密後的明文，只存在記憶體
+let stays = []; // [{ id, place: "TW" | "OT", start: "YYYY-MM-DD", end: "YYYY-MM-DD" }]
+let stayTravelJP = true; // 出發日、回程日是否算在日本
+// 已用目前的金鑰把行程載進記憶體（或確認過根本沒有行程）。false 時不准顯示也不准寫入，
+// 否則會拿空陣列加密後蓋掉那份還沒解開的密文
+let stayReady = false;
+let stayLocalStale = false; // 本機密文屬於上一個金鑰庫（別台裝置換過加密密碼），得等雲端補
+let stayUndecryptable = false; // 雲端有比較新的行程，但目前的金鑰解不開
+let stayYear = null; // 目前檢視的年度（9 月所在的西元年），進頁面時才決定
+
 // ── DOM Elements ──
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
@@ -563,6 +577,7 @@ async function initApp() {
   initReview();
   initLibrary();
   initHabitTracker();
+  initStay();
   initBelief();
   initModal();
   initSettings();
@@ -765,6 +780,10 @@ async function syncFromNotion() {
       // ── 集合A／非A 日記（逐月比對，未解鎖時只取回金鑰卡片、不動本機密文）──
       await mergeBeliefsFromCloud(notionCards);
 
+      // ── 在日天數的行程（密文寄放在習慣卡片裡）。排在金鑰卡片之後：
+      // 加密密碼若在別台換過，上面那步會先鎖上，這裡就只收下密文、不嘗試解 ──
+      if (await mergeStaysFromCards(notionCards)) pushHabitsToNotion();
+
       // ── 以資料庫為主（Source of Truth）全數覆寫本地端 ──
       const realNotionCards = notionCards.filter(c => !isMetaCard(c));
       cards = [...realNotionCards];
@@ -784,7 +803,8 @@ async function syncFromNotion() {
         return false;
       }
       await NotionAPI.syncAll(cards);
-      if (habits.length > 0) pushHabitsToNotion();
+      // 行程的密文不必解鎖也推得回去，所以沒有習慣、只有行程時也要補推
+      if (habits.length > 0 || stayCloudFields().staysEnc) pushHabitsToNotion();
       saveStreak(loadStreak());
       pushBeliefKeyCard();
       pushBeliefsToNotion();
@@ -793,6 +813,7 @@ async function syncFromNotion() {
     updateSyncStatus('connected');
     updateDashboard();
     renderHabitTracker();
+    renderStayView();
     // 知識庫只在切頁時重繪，同步完成時若正停在這頁不補繪，
     // 會一直顯示同步前的「知識庫是空的」，要切走再切回來才看得到資料
     if ($('#libraryView') && $('#libraryView').classList.contains('active')) {
@@ -996,7 +1017,7 @@ function pushHabitsToNotion() {
     const habitsCard = {
       id: HABITS_CARD_ID,
       word: '__habits__',
-      meaning: JSON.stringify({ habits, habitChecks, cardChecks, langAliases, langOrder }),
+      meaning: JSON.stringify({ habits, habitChecks, cardChecks, langAliases, langOrder, ...stayCloudFields() }),
       example: localStorage.getItem('crystal_habit_updated_at') || String(Date.now()),
       pronunciation: '', category: '', audioUrl: '', lang: '',
       level: 0, nextReview: 0, createdAt: Date.now(), reviewCount: 0,
@@ -1187,6 +1208,7 @@ function lockBeliefsAndRefresh(reason, toast) {
   renderHabitTracker(); // 有日記的圓點要跟著消失
   // renderBeliefView 內也會檢查逾時，但此時 beliefLocked 已是 true，不會再遞迴進來
   if ($('#beliefView')?.classList.contains('active')) renderBeliefView();
+  if ($('#stayView')?.classList.contains('active')) renderStayView();
   showToast(toast);
 }
 
@@ -1213,6 +1235,7 @@ async function createBeliefVault(passphrase) {
   beliefKey = key;
   beliefLocked = false;
   storeBeliefPass(passphrase);
+  await loadStaysFromLocal();
 
   pushBeliefKeyCard();
   return true;
@@ -1231,6 +1254,7 @@ async function unlockBeliefs(passphrase) {
   beliefLocked = false;
   storeBeliefPass(passphrase);
   beliefLocalStale = (await loadBeliefsFromLocal()) === 'stale';
+  await loadStaysFromLocal();
   await pullBeliefsAfterUnlock();
 
   // 本機密文對不上金鑰、雲端又沒補到內容：退回鎖定。放行只會讓人在空資料上編輯，
@@ -1240,6 +1264,7 @@ async function unlockBeliefs(passphrase) {
     beliefKey = null;
     beliefLocked = true;
     beliefs = [];
+    clearStayMemory();
     return 'stale';
   }
   return true;
@@ -1254,6 +1279,7 @@ async function pullBeliefsAfterUnlock() {
     const notionCards = await NotionAPI.loadAll();
     if (!notionCards) return;
     await mergeBeliefsFromCloud(notionCards);
+    if (await mergeStaysFromCards(notionCards)) pushHabitsToNotion();
     // 本機密文對不上金鑰、而雲端根本一張月卡片都沒有，那就是「這個金鑰庫是空的」，
     // 不是拉取失敗。這時放行並把那份對不上的密文換掉，否則密碼正確也永遠進不來
     if (beliefLocalStale &&
@@ -1279,6 +1305,7 @@ async function tryAutoUnlockBeliefs() {
     if (!(await verifyBeliefKey(key))) return false;
     beliefKey = key;
     beliefLocked = false;
+    await loadStaysFromLocal(); // 對不上金鑰的話留給開 App 的那輪同步去跟雲端要
     if ((await loadBeliefsFromLocal()) === 'stale') {
       // 別台裝置換過加密密碼：存的密碼還是對的，但本機密文是舊金鑰庫的，得跟雲端要
       beliefLocalStale = true;
@@ -1287,6 +1314,7 @@ async function tryAutoUnlockBeliefs() {
         beliefKey = null;
         beliefLocked = true;
         beliefs = [];
+        clearStayMemory();
         return false;
       }
     }
@@ -1320,6 +1348,7 @@ async function rotateBeliefPassphrase(oldPass, newPass, onProgress = () => {}) {
 
   const proxy = getNotionProxyUrl();
   let cloudBeliefCards = [];
+  let cloudHabitsCard = null;
 
   if (proxy) {
     onProgress('正在向雲端確認最新內容...');
@@ -1340,12 +1369,22 @@ async function rotateBeliefPassphrase(oldPass, newPass, onProgress = () => {}) {
       };
     }
     cloudBeliefCards = notionCards.filter(c => String(c.id).startsWith(BELIEF_CARD_PREFIX));
+    cloudHabitsCard = notionCards.find(c => c.id === HABITS_CARD_ID) || null;
+    await mergeStaysFromCards(notionCards);
+  }
+  // 在日天數的行程也是這把金鑰加密的，手上沒有解開的那一份就不能換
+  if (!stayReady || stayLocalStale || stayUndecryptable) {
+    return { ok: false, error: '在日天數的行程現在解不開，換密碼會讓它永遠解不開。請先同步到看得到行程再換。' };
   }
 
   const newSalt = crypto.getRandomValues(new Uint8Array(16));
   const newKey = await deriveBeliefKey(newPass, newSalt);
   const newVerifier = await encryptBelief(BELIEF_VERIFIER_TEXT, newKey);
   const ts = Date.now();
+  // 雲端與本機要放同一份密文，所以只加密一次。本來就沒有行程就不必憑空生一份
+  const newStayEnc = (stays.length > 0 || localStorage.getItem(STAY_STORE_KEY))
+    ? await encryptBelief(JSON.stringify({ stays, travelJP: stayTravelJP }), newKey)
+    : null;
 
   // 本機有的月份，聯集雲端有的月份。時間戳一律推進成 ts，其他裝置才會判定雲端較新而重拉
   const months = [...new Set([
@@ -1387,6 +1426,39 @@ async function rotateBeliefPassphrase(oldPass, newPass, onProgress = () => {}) {
       }
     }
 
+    // 行程的密文寄放在習慣卡片裡。習慣的內容與時間戳照雲端原樣帶著走，只換掉密文
+    if (newStayEnc) {
+      onProgress('重新加密在日天數...');
+      let data = null;
+      try {
+        data = cloudHabitsCard ? JSON.parse(cloudHabitsCard.meaning || '{}') : null;
+      } catch (e) {
+        data = null;
+      }
+      if (!data) data = { habits, habitChecks, cardChecks, langAliases, langOrder };
+      const habitsCard = {
+        id: HABITS_CARD_ID,
+        word: '__habits__',
+        example: cloudHabitsCard
+          ? cloudHabitsCard.example
+          : (localStorage.getItem('crystal_habit_updated_at') || String(ts)),
+        pronunciation: '', category: '', audioUrl: '', lang: '',
+        level: 0, nextReview: 0, createdAt: ts, reviewCount: 0,
+      };
+      try {
+        await NotionAPI.saveCard({
+          ...habitsCard,
+          meaning: JSON.stringify({ ...data, staysEnc: newStayEnc, staysAt: ts }),
+        });
+        // 雲端原本沒有這張卡片時無從「寫回原件」，回滾就寫一張不帶行程密文的
+        const { staysEnc, staysAt, ...plain } = data;
+        done.push(cloudHabitsCard || { ...habitsCard, meaning: JSON.stringify(plain) });
+      } catch (e) {
+        await rollback();
+        return { ok: false, error: '在日天數重新加密失敗，已復原成原本的內容，密碼沒有更換。' };
+      }
+    }
+
     // 月卡片全部就位，最後才宣告新金鑰
     onProgress('更新金鑰...');
     try {
@@ -1410,10 +1482,12 @@ async function rotateBeliefPassphrase(oldPass, newPass, onProgress = () => {}) {
     salt: oldSaltB64,
     verifier: localStorage.getItem(BELIEF_VERIFIER_KEY),
     cipher: localStorage.getItem(BELIEF_STORE_KEY),
+    stayCipher: localStorage.getItem(STAY_STORE_KEY),
   }));
   beliefKey = newKey;
   localStorage.setItem(BELIEF_SALT_KEY, bytesToB64(newSalt));
   localStorage.setItem(BELIEF_VERIFIER_KEY, newVerifier);
+  if (newStayEnc) storeStayCipher(newStayEnc, ts);
   storeBeliefPass(newPass);
   await saveBeliefsToLocal();
   const map = loadBeliefUpdatedMap();
@@ -1437,6 +1511,7 @@ function lockBeliefs() {
   beliefKey = null;
   beliefLocked = true;
   beliefs = [];
+  clearStayMemory();
 }
 
 // ── 本機存取（本機也是加密存放）──
@@ -1585,6 +1660,7 @@ async function mergeBeliefsFromCloud(notionCards) {
           beliefKey = null;
           beliefLocked = true;
           beliefs = [];
+          clearStayMemory();
           beliefUndecryptable = [];
           showToast('加密密碼已在其他裝置更換，請重新輸入新密碼');
           return;
@@ -2402,6 +2478,7 @@ function switchView(viewName) {
   if (viewName === 'review') startReviewSession();
   if (viewName === 'library') renderLibrary();
   if (viewName === 'habit') renderHabitTracker({ anchorToday: true });
+  if (viewName === 'stay') renderStayView();
   if (viewName === 'belief') {
     // 每次進分頁都回到預設的「待補非A」，開頁就直接看到還沒轉的那幾則
     setBeliefFilter('pending');
@@ -2918,6 +2995,381 @@ function renderHabitTracker({ anchorToday = false } = {}) {
   }
 
   applyEllipsisTitles(body);
+}
+
+// ── 在日天數 ──
+const STAY_LIMIT = 270;
+
+// 行程跟集合A 日記共用同一把金鑰（beliefKey）與同一套上鎖規則，本機與雲端存的都是密文。
+// 雲端不另開隱藏卡片，而是把密文寄放在習慣卡片 __crystal_habits__ 的 staysEnc 欄位：
+// 另開的話還沒更新的裝置不認得新 id，那張卡會以單字卡之姿跑進知識庫；
+// 而密文不必解鎖也能原樣轉推，鎖著的裝置同步時不會把它弄丟
+const STAY_STORE_KEY = 'crystal_stay_cipher';
+const STAY_UPDATED_KEY = 'crystal_stay_updated_at';
+// 這份密文是在哪個 salt 底下加密的。別台換過加密密碼之後，本機這份就成了解不開的舊密文，
+// 靠它認出來並擋下——否則時間戳較新的舊密文會被推上去蓋掉雲端那份解得開的
+const STAY_SALT_KEY = 'crystal_stay_salt';
+const STAY_HELD_KEY = 'crystal_stay_held'; // 雲端較新、但這台還沒能解開的密文，原樣留著轉推
+const STAY_PREV_STORE_KEY = 'crystal_stay_cipher_prev'; // 被換掉的解不開密文，只留這台裝置
+// 加密前那一版把行程明文存在這兩個 key，第一次解鎖時收進金鑰庫後刪掉
+const STAY_LEGACY_LIST_KEY = 'crystal_stay_list';
+const STAY_LEGACY_TRAVEL_KEY = 'crystal_stay_travel_jp';
+
+function clearStayMemory() {
+  stays = [];
+  stayTravelJP = true;
+  stayReady = false;
+  stayLocalStale = false;
+  stayUndecryptable = false;
+}
+
+function applyStayData(data) {
+  stays = (Array.isArray(data && data.stays) ? data.stays : []).filter(s => STAY_PLACES[s.place]);
+  stayTravelJP = !data || data.travelJP !== false;
+}
+
+function loadStayHeld() {
+  try {
+    const held = JSON.parse(localStorage.getItem(STAY_HELD_KEY) || 'null');
+    return held && typeof held.enc === 'string' ? held : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function storeStayCipher(enc, at) {
+  localStorage.setItem(STAY_STORE_KEY, enc);
+  localStorage.setItem(STAY_UPDATED_KEY, String(at));
+  localStorage.setItem(STAY_SALT_KEY, localStorage.getItem(BELIEF_SALT_KEY) || '');
+  localStorage.removeItem(STAY_HELD_KEY);
+}
+
+// 要放進習慣卡片的行程密文：本機那份與「替雲端保管」那份取較新的。
+// 本機那份若不是目前的 salt 加密的就不算數（見 STAY_SALT_KEY）
+function stayCloudFields() {
+  const enc = localStorage.getItem(STAY_STORE_KEY);
+  const current = enc && localStorage.getItem(STAY_SALT_KEY) === (localStorage.getItem(BELIEF_SALT_KEY) || '');
+  const localAt = current ? Number(localStorage.getItem(STAY_UPDATED_KEY)) || 0 : 0;
+  const held = loadStayHeld();
+  if (held && held.at > localAt) return { staysEnc: held.enc, staysAt: held.at };
+  return current ? { staysEnc: enc, staysAt: localAt } : {};
+}
+
+// 試著收下一份密文（來自雲端）。解不開就原樣保管、不動本機那份，也不會被本機的蓋回去
+async function adoptStayCipher(enc, at) {
+  let data = null;
+  try {
+    const json = await decryptBelief(enc);
+    data = json === null ? null : JSON.parse(json);
+  } catch (e) {
+    data = null;
+  }
+  if (!data) {
+    console.warn('雲端的在日天數行程解密失敗，保留本機密文不動');
+    stayUndecryptable = true;
+    localStorage.setItem(STAY_HELD_KEY, JSON.stringify({ enc, at }));
+    return false;
+  }
+  applyStayData(data);
+  storeStayCipher(enc, at);
+  stayUndecryptable = false;
+  stayLocalStale = false;
+  stayReady = true;
+  return true;
+}
+
+// 解鎖後把本機密文載進記憶體。解不開一律保留密文、不覆寫
+async function loadStaysFromLocal() {
+  if (!beliefKey) return;
+  clearStayMemory();
+  const raw = localStorage.getItem(STAY_STORE_KEY);
+  if (raw) {
+    const json = await decryptBelief(raw);
+    if (json === null) {
+      console.warn('本機在日天數密文與目前金鑰對不上，保留密文不動');
+      stayLocalStale = true;
+    } else {
+      try {
+        applyStayData(JSON.parse(json));
+      } catch (e) {
+        applyStayData(null);
+      }
+      stayReady = true;
+    }
+  } else {
+    stayReady = true;
+    let legacy = [];
+    try {
+      legacy = JSON.parse(localStorage.getItem(STAY_LEGACY_LIST_KEY) || '[]') || [];
+    } catch (e) {
+      legacy = [];
+    }
+    if (Array.isArray(legacy) && legacy.length) {
+      applyStayData({ stays: legacy, travelJP: localStorage.getItem(STAY_LEGACY_TRAVEL_KEY) !== '0' });
+      await commitStays();
+    }
+  }
+  // 明文只在確定已經有一份解得開的密文之後才刪
+  if (stayReady) {
+    localStorage.removeItem(STAY_LEGACY_LIST_KEY);
+    localStorage.removeItem(STAY_LEGACY_TRAVEL_KEY);
+  }
+  // 鎖著的期間雲端來過比較新的密文，現在有金鑰了，補解
+  const held = loadStayHeld();
+  const localAt = stayLocalStale ? 0 : Number(localStorage.getItem(STAY_UPDATED_KEY)) || 0;
+  if (held && held.at > localAt) await adoptStayCipher(held.enc, held.at);
+}
+
+// 行程有異動：加密存本機並排程推上雲端。回傳是否真的存了
+async function commitStays() {
+  if (!beliefKey || !stayReady || stayUndecryptable) return false;
+  storeStayCipher(await encryptBelief(JSON.stringify({ stays, travelJP: stayTravelJP })), Date.now());
+  pushHabitsToNotion();
+  return true;
+}
+
+// 從同步結果取出行程密文。回傳「雲端沒有或比較舊，需要把手上這份推上去」
+async function mergeStaysFromCards(notionCards) {
+  const card = notionCards.find(c => c.id === HABITS_CARD_ID);
+  let data = {};
+  if (card) {
+    try {
+      data = JSON.parse(card.meaning || '{}') || {};
+    } catch (e) {
+      return false; // 卡片讀不懂就別碰，更不能拿本機的蓋上去
+    }
+  }
+  const cloudEnc = typeof data.staysEnc === 'string' ? data.staysEnc : '';
+  const cloudAt = Number(data.staysAt) || 0;
+  const mineBefore = stayCloudFields();
+
+  if (cloudEnc && cloudAt > (mineBefore.staysAt || 0)) {
+    if (beliefKey) await adoptStayCipher(cloudEnc, cloudAt);
+    else localStorage.setItem(STAY_HELD_KEY, JSON.stringify({ enc: cloudEnc, at: cloudAt })); // 鎖著，先收著
+  } else if (beliefKey && stayLocalStale && cloudEnc) {
+    // 本機那份解不開，雲端這份就算時間戳沒比較新也值得一試
+    await adoptStayCipher(cloudEnc, cloudAt);
+  }
+
+  // 本機密文對不上金鑰、雲端又完全沒有行程：這個金鑰庫裡本來就沒有行程，不是拉取失敗。
+  // 放行，否則密碼正確也永遠進不來；那份對不上的密文另存一份，不直接丟
+  if (beliefKey && stayLocalStale && !cloudEnc) {
+    localStorage.setItem(STAY_PREV_STORE_KEY, localStorage.getItem(STAY_STORE_KEY) || '');
+    localStorage.removeItem(STAY_STORE_KEY);
+    localStorage.removeItem(STAY_UPDATED_KEY);
+    localStorage.removeItem(STAY_SALT_KEY);
+    clearStayMemory();
+    stayReady = true;
+  }
+
+  const mine = stayCloudFields();
+  return !!mine.staysEnc && (!cloudEnc || mine.staysAt > cloudAt);
+}
+
+function stayDateKey(y, m, d) {
+  return `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+
+// "2027-05-08" → "2027/05/08(六)"
+function stayDateLabel(key) {
+  const [y, m, d] = key.split('-').map(Number);
+  return `${key.replace(/-/g, '/')}(${'日一二三四五六'[new Date(y, m - 1, d).getDay()]})`;
+}
+
+// 年度以 9 月所在的西元年命名：2026 年度 = 2026/9/1～2027/8/31
+function currentStayYear() {
+  const now = new Date();
+  return now.getMonth() >= 8 ? now.getFullYear() : now.getFullYear() - 1;
+}
+
+// 行程歸在哪一季看出發日：1–3 月 Q1、4–6 月 Q2、7–9 月 Q3、10–12 月 Q4。
+// 跨季的行程（9 月出發、10 月回來）只算出發那一季，不然會把下一季的額度也吃掉
+function stayQuarter(dateKey) {
+  const [y, m] = dateKey.split('-').map(Number);
+  return { year: y, q: Math.ceil(m / 3), label: `${y} Q${Math.ceil(m / 3)}` };
+}
+
+// 某一天人在哪。沒被任何行程蓋到就是日本。行程的頭尾兩天是移動日（當天還有一段時間在日本），
+// 算哪邊由 stayTravelJP 決定——270 天的門檻只差幾天時，這個差別會翻盤。
+// 只待一天的行程，以及兩段行程接在同一天（從台灣直接飛別處）不算移動日
+function stayPlaceOn(key) {
+  const here = stays.filter(s => s.start <= key && key <= s.end);
+  if (here.length === 0) return 'JP';
+  const s = here[0];
+  if (stayTravelJP && here.length === 1 && s.start !== s.end && (s.start === key || s.end === key)) return 'JP';
+  return (here.find(x => x.place === 'TW') || s).place;
+}
+
+function computeStayYear(year) {
+  const now = new Date();
+  const todayKey = stayDateKey(now.getFullYear(), now.getMonth(), now.getDate());
+  const blank = () => ({ JP: 0, TW: 0, OT: 0 });
+  const total = blank();
+  let jpSoFar = 0; // 到今天為止已經實際待在日本的天數
+  const months = [];
+  for (let i = 0; i < 12; i++) {
+    const m = (8 + i) % 12;
+    const y = year + (i >= 4 ? 1 : 0);
+    const daysInMonth = new Date(y, m + 1, 0).getDate();
+    const count = blank();
+    for (let d = 1; d <= daysInMonth; d++) {
+      const key = stayDateKey(y, m, d);
+      const place = stayPlaceOn(key);
+      count[place]++;
+      total[place]++;
+      if (place === 'JP' && key <= todayKey) jpSoFar++;
+    }
+    months.push({ label: `${m + 1}月`, q: Math.ceil((m + 1) / 3), count });
+  }
+  return { months, total, jpSoFar, days: total.JP + total.TW + total.OT };
+}
+
+function renderStayView() {
+  const summary = $('#staySummary');
+  if (!summary) return;
+
+  // 背景時 setTimeout 未必跑得到，切進這一頁時補檢查一次逾時
+  checkBeliefUnlockExpiry();
+  const locked = beliefLocked || !stayReady;
+  $('#stayLockPanel').style.display = locked ? '' : 'none';
+  $('#stayContent').style.display = locked ? 'none' : '';
+  $('#stayYearBar').style.display = locked ? 'none' : '';
+  $('#staySubtitle').style.display = locked ? 'none' : ''; // 270 天這個門檻本身也不想讓人看到
+  if (locked) {
+    $('#stayLockDesc').textContent = beliefLocked
+      ? '行程跟「集合A｜非A」用同一組加密密碼保護，雲端看到的是一串亂碼。解鎖後才看得到。'
+      : '這台裝置上的行程是用先前的加密密碼存的，目前的密碼解不開。內容原封不動留著，連上雲端同步後會換成最新的那一份。';
+    $('#stayUnlockBtn').style.display = beliefLocked ? '' : 'none';
+    return;
+  }
+  const warnEl = $('#stayDecryptWarn');
+  warnEl.style.display = stayUndecryptable ? '' : 'none';
+  if (stayUndecryptable) {
+    warnEl.textContent = '雲端有一份比較新的行程，但目前的密碼解不開，通常是某台裝置重新設定過加密密碼。'
+      + '它仍完整保存在雲端、沒有被刪除；為了不覆寫它，這台裝置暫時不能新增或修改行程。';
+  }
+  if (stayYear === null) stayYear = currentStayYear();
+  const start = stayDateKey(stayYear, 8, 1);
+  const end = stayDateKey(stayYear + 1, 7, 31);
+  $('#stayYearLabel').textContent = `${stayYear}年度（${stayYear}/9/1 - ${stayYear + 1}/8/31）`;
+  $('#stayTravelJP').checked = stayTravelJP;
+
+  const { months, total, jpSoFar, days } = computeStayYear(stayYear);
+  const jp = total.JP;
+  const away = total.TW + total.OT;
+  const over = jp > STAY_LIMIT;
+  const verdict = over ? `會超過，多了 ${jp - STAY_LIMIT} 天` : '不會超過';
+  const detail = over
+    ? `日本以外目前排了 ${away} 天，再排 ${jp - STAY_LIMIT} 天就剛好壓在 ${STAY_LIMIT} 天。`
+    : `日本以外排了 ${away} 天，還能少排 ${STAY_LIMIT - jp} 天而不超過。`;
+
+  const pct = n => Math.min(100, n / days * 100).toFixed(2);
+  summary.className = `stay-summary stay-${over ? 'over' : 'safe'}`;
+  summary.innerHTML = `
+    <div class="stay-summary-main">
+      <div class="stay-count"><span class="stay-count-num">${jp}</span><span class="stay-count-unit">／${STAY_LIMIT} 天</span></div>
+      <div class="stay-verdict">${verdict}</div>
+    </div>
+    <div class="stay-bar" role="img" aria-label="日本 ${jp} 天，門檻 ${STAY_LIMIT} 天">
+      <div class="stay-bar-jp" style="width:${pct(jp)}%"></div>
+      <div class="stay-bar-limit" style="left:${pct(STAY_LIMIT)}%"></div>
+    </div>
+    <p class="stay-detail">${detail}</p>
+    <div class="stay-facts">
+      <span>到今天已在日本 <b>${jpSoFar}</b> 天</span>
+      <span>台灣 <b>${total.TW}</b> 天</span>
+      <span>其他 <b>${total.OT}</b> 天</span>
+    </div>`;
+
+  const rows = [['JP', '日本'], ['TW', '台灣'], ['OT', '其他']];
+  // 年度從 9 月起算，所以季的順序是 Q3（只剩 9 月）、Q4、Q1、Q2、Q3（7–8 月）
+  const quarters = [];
+  months.forEach(m => {
+    const last = quarters[quarters.length - 1];
+    if (last && last.q === m.q) last.span++;
+    else quarters.push({ q: m.q, span: 1 });
+  });
+  const qStart = i => (i === 0 || months[i].q !== months[i - 1].q ? 'stay-q-start' : '');
+  $('#stayTable').innerHTML = `
+    <thead>
+      <tr class="stay-quarter-row"><th></th>${quarters.map(g => `<th colspan="${g.span}">Q${g.q}</th>`).join('')}<th></th></tr>
+      <tr><th></th>${months.map((m, i) => `<th class="${qStart(i)}">${m.label}</th>`).join('')}<th>合計</th></tr>
+    </thead>
+    <tbody>${rows.map(([k, name]) => `<tr class="stay-row-${k}">
+      <th>${name}</th>${months.map((m, i) => `<td class="${m.count[k] ? '' : 'zero'} ${qStart(i)}">${m.count[k]}</td>`).join('')}<td class="stay-total">${total[k]}</td>
+    </tr>`).join('')}</tbody>`;
+
+  const list = stays.filter(s => s.start <= end && s.end >= start).sort((a, b) => a.start.localeCompare(b.start));
+  $('#stayList').innerHTML = list.length === 0
+    ? '<p class="stay-empty">這個年度還沒有行程，所以整年都算在日本。把離開日本的每一段加進來，出發日填開始、回程日填結束。</p>'
+    : list.map(s => {
+      const n = Math.round((new Date(s.end) - new Date(s.start)) / 86400000) + 1;
+      return `<div class="stay-item stay-item-${s.place}">
+        <span class="stay-item-place">${STAY_PLACES[s.place] || escapeHtml(s.place)}</span>
+        <span class="stay-item-quarter">${stayQuarter(s.start).label}</span>
+        <span class="stay-item-range">${stayDateLabel(s.start)} ～ ${stayDateLabel(s.end)}</span>
+        <span class="stay-item-days">${n} 天</span>
+        <button type="button" class="stay-item-del" data-stay-id="${s.id}" title="刪除行程">×</button>
+      </div>`;
+    }).join('');
+}
+
+function initStay() {
+  const form = $('#stayForm');
+  if (!form) return;
+  // 行程改完要加密存檔；存不了（鎖著、或雲端那份還解不開）就把記憶體退回去，
+  // 畫面才不會停在一份其實沒存到的內容上
+  const applyStayChange = async (mutate) => {
+    touchBeliefUnlock();
+    if (beliefLocked || !stayReady) { renderStayView(); return false; }
+    if (stayUndecryptable) {
+      showToast('雲端有一份解不開的行程，暫時不能修改');
+      renderStayView();
+      return false;
+    }
+    const before = { stays: [...stays], travelJP: stayTravelJP };
+    mutate();
+    if (!(await commitStays())) applyStayData(before);
+    renderStayView();
+    return true;
+  };
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const start = $('#stayStart').value;
+    const end = $('#stayEnd').value;
+    if (!start || !end) return;
+    if (end < start) {
+      showToast('結束日不能早於開始日');
+      return;
+    }
+    const place = $('#stayPlace').value;
+    // 台灣一季只能回一次
+    if (place === 'TW') {
+      const quarter = stayQuarter(start).label;
+      if (stays.some(s => s.place === 'TW' && stayQuarter(s.start).label === quarter)) {
+        showToast(`${quarter} 已經有一段台灣行程，同一季不能排兩次`, 3500);
+        return;
+      }
+    }
+    if (await applyStayChange(() => stays.push({ id: generateId(), place, start, end }))) {
+      // 下一段通常從這段的結束日（移動日）接著排
+      $('#stayStart').value = end;
+      $('#stayEnd').value = '';
+    }
+  });
+  $('#stayList').addEventListener('click', (e) => {
+    const btn = e.target.closest('.stay-item-del');
+    if (!btn) return;
+    applyStayChange(() => { stays = stays.filter(s => s.id !== btn.dataset.stayId); });
+  });
+  $('#stayTravelJP').addEventListener('change', (e) => {
+    const checked = e.target.checked;
+    applyStayChange(() => { stayTravelJP = checked; });
+  });
+  $('#stayPrevYear').addEventListener('click', () => { touchBeliefUnlock(); stayYear--; renderStayView(); });
+  $('#stayNextYear').addEventListener('click', () => { touchBeliefUnlock(); stayYear++; renderStayView(); });
+  $('#stayUnlockBtn').addEventListener('click', () => switchView('belief'));
 }
 
 function initHabitDragScroll(container) {
