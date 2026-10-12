@@ -3257,14 +3257,16 @@ function renderStayView() {
   const { months, total, jpSoFar, days } = computeStayYear(stayYear);
   const jp = total.JP;
   const away = total.TW + total.OT;
+  // 目標是「超過」門檻：超過才算過關，沒超過才需要警告
   const over = jp > STAY_LIMIT;
-  const verdict = over ? `會超過，多了 ${jp - STAY_LIMIT} 天` : '不會超過';
+  const room = jp - STAY_LIMIT - 1; // 日本以外還能再多排幾天而仍然超過
+  const verdict = over ? `會超過，多了 ${jp - STAY_LIMIT} 天` : `不會超過，還差 ${STAY_LIMIT + 1 - jp} 天`;
   const detail = over
-    ? `日本以外目前排了 ${away} 天，再排 ${jp - STAY_LIMIT} 天就剛好壓在 ${STAY_LIMIT} 天。`
-    : `日本以外排了 ${away} 天，還能少排 ${STAY_LIMIT - jp} 天而不超過。`;
+    ? `日本以外目前排了 ${away} 天，` + (room > 0 ? `最多還能再排 ${room} 天，再多就不會超過 ${STAY_LIMIT} 天。` : `不能再多排了，再排 1 天就不會超過 ${STAY_LIMIT} 天。`)
+    : `日本以外排了 ${away} 天，要少排 ${STAY_LIMIT + 1 - jp} 天才會超過 ${STAY_LIMIT} 天。`;
 
   const pct = n => Math.min(100, n / days * 100).toFixed(2);
-  summary.className = `stay-summary stay-${over ? 'over' : 'safe'}`;
+  summary.className = `stay-summary stay-${over ? 'over' : 'short'}`;
   summary.innerHTML = `
     <div class="stay-summary-main">
       <div class="stay-count"><span class="stay-count-num">${jp}</span><span class="stay-count-unit">／${STAY_LIMIT} 天</span></div>
