@@ -56,6 +56,7 @@ let stayTravelJP = true; // 出發日、回程日是否算在日本
 let stayReady = false;
 let stayLocalStale = false; // 本機密文屬於上一個金鑰庫（別台裝置換過加密密碼），得等雲端補
 let stayUndecryptable = false; // 雲端有比較新的行程，但目前的金鑰解不開
+let stayEditingId = null; // 正在編輯的那筆行程，null 代表沒有
 let stayYear = null; // 目前檢視的年度（9 月所在的西元年），進頁面時才決定
 
 // ── DOM Elements ──
@@ -3016,6 +3017,7 @@ const STAY_LEGACY_LIST_KEY = 'crystal_stay_list';
 const STAY_LEGACY_TRAVEL_KEY = 'crystal_stay_travel_jp';
 
 function clearStayMemory() {
+  stayEditingId = null;
   stays = [];
   stayTravelJP = true;
   stayReady = false;
@@ -3305,15 +3307,45 @@ function renderStayView() {
   $('#stayList').innerHTML = list.length === 0
     ? '<p class="stay-empty">這個年度還沒有行程，所以整年都算在日本。把離開日本的每一段加進來，出發日填開始、回程日填結束。</p>'
     : list.map(s => {
+      if (s.id === stayEditingId) {
+        return `<form class="stay-item stay-edit-form" data-stay-id="${s.id}">
+          <select class="form-input stay-edit-place" aria-label="地點">
+            ${Object.entries(STAY_PLACES).map(([k, name]) => `<option value="${k}"${k === s.place ? ' selected' : ''}>${name}</option>`).join('')}
+          </select>
+          <input type="date" class="form-input stay-edit-start" aria-label="開始日" value="${s.start}" required>
+          <span class="stay-form-sep">～</span>
+          <input type="date" class="form-input stay-edit-end" aria-label="結束日" value="${s.end}" required>
+          <button type="submit" class="stay-edit-save">儲存</button>
+          <button type="button" class="stay-edit-cancel">取消</button>
+        </form>`;
+      }
       const n = Math.round((new Date(s.end) - new Date(s.start)) / 86400000) + 1;
       return `<div class="stay-item stay-item-${s.place}">
         <span class="stay-item-place">${STAY_PLACES[s.place] || escapeHtml(s.place)}</span>
         <span class="stay-item-quarter">${stayQuarter(s.start).label}</span>
         <span class="stay-item-range">${stayDateLabel(s.start)} ～ ${stayDateLabel(s.end)}</span>
         <span class="stay-item-days">${n} 天</span>
+        <button type="button" class="stay-item-edit" data-stay-id="${s.id}" title="編輯行程">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+        </button>
         <button type="button" class="stay-item-del" data-stay-id="${s.id}" title="刪除行程">×</button>
       </div>`;
     }).join('');
+}
+
+// 檢查一筆行程能不能存，不行就回傳要顯示的訊息。ignoreId 是正在編輯的那筆，
+// 改它自己的日期時不能拿它自己來擋
+function stayInvalidReason(place, start, end, ignoreId = null) {
+  if (!start || !end) return '請填開始日與結束日';
+  if (end < start) return '結束日不能早於開始日';
+  // 台灣一季只能回一次
+  if (place === 'TW') {
+    const quarter = stayQuarter(start).label;
+    if (stays.some(s => s.id !== ignoreId && s.place === 'TW' && stayQuarter(s.start).label === quarter)) {
+      return `${quarter} 已經有一段台灣行程，同一季不能排兩次`;
+    }
+  }
+  return '';
 }
 
 function initStay() {
@@ -3331,9 +3363,10 @@ function initStay() {
     }
     const before = { stays: [...stays], travelJP: stayTravelJP };
     mutate();
-    if (!(await commitStays())) applyStayData(before);
+    const saved = await commitStays();
+    if (!saved) applyStayData(before);
     renderStayView();
-    return true;
+    return saved;
   };
 
   form.addEventListener('submit', async (e) => {
@@ -3341,18 +3374,11 @@ function initStay() {
     const start = $('#stayStart').value;
     const end = $('#stayEnd').value;
     if (!start || !end) return;
-    if (end < start) {
-      showToast('結束日不能早於開始日');
-      return;
-    }
     const place = $('#stayPlace').value;
-    // 台灣一季只能回一次
-    if (place === 'TW') {
-      const quarter = stayQuarter(start).label;
-      if (stays.some(s => s.place === 'TW' && stayQuarter(s.start).label === quarter)) {
-        showToast(`${quarter} 已經有一段台灣行程，同一季不能排兩次`, 3500);
-        return;
-      }
+    const reason = stayInvalidReason(place, start, end);
+    if (reason) {
+      showToast(reason, 3500);
+      return;
     }
     if (await applyStayChange(() => stays.push({ id: generateId(), place, start, end }))) {
       // 下一段通常從這段的結束日（移動日）接著排
@@ -3361,9 +3387,43 @@ function initStay() {
     }
   });
   $('#stayList').addEventListener('click', (e) => {
+    const editBtn = e.target.closest('.stay-item-edit');
+    if (editBtn) {
+      touchBeliefUnlock();
+      stayEditingId = editBtn.dataset.stayId;
+      renderStayView();
+      return;
+    }
+    if (e.target.closest('.stay-edit-cancel')) {
+      stayEditingId = null;
+      renderStayView();
+      return;
+    }
     const btn = e.target.closest('.stay-item-del');
     if (!btn) return;
     applyStayChange(() => { stays = stays.filter(s => s.id !== btn.dataset.stayId); });
+  });
+  $('#stayList').addEventListener('submit', async (e) => {
+    const editForm = e.target.closest('.stay-edit-form');
+    if (!editForm) return;
+    e.preventDefault();
+    const id = editForm.dataset.stayId;
+    const place = editForm.querySelector('.stay-edit-place').value;
+    const start = editForm.querySelector('.stay-edit-start').value;
+    const end = editForm.querySelector('.stay-edit-end').value;
+    const reason = stayInvalidReason(place, start, end, id);
+    if (reason) {
+      showToast(reason, 3500);
+      return;
+    }
+    // 存成功才收起編輯列；存不了的話留著，改到一半的日期才不會不見
+    const saved = await applyStayChange(() => {
+      stays = stays.map(s => (s.id === id ? { ...s, place, start, end } : s));
+    });
+    if (saved) {
+      stayEditingId = null;
+      renderStayView();
+    }
   });
   $('#stayTravelJP').addEventListener('change', (e) => {
     const checked = e.target.checked;

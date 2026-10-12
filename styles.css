@@ -3921,6 +3921,7 @@ select.form-input {
   font-variant-numeric: tabular-nums;
 }
 
+.stay-item-edit,
 .stay-item-del {
   width: 28px;
   height: 28px;
@@ -3935,6 +3936,47 @@ select.form-input {
 .stay-item-del:hover {
   color: var(--accent-danger);
   background: var(--bg-glass-hover);
+}
+
+.stay-item-edit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stay-item-edit:hover {
+  color: var(--accent-primary);
+  background: var(--bg-glass-hover);
+}
+
+.stay-edit-form {
+  flex-wrap: wrap;
+  border-color: var(--border-accent);
+}
+
+.stay-edit-form .form-input {
+  flex: 1;
+  min-width: 130px;
+  width: auto;
+}
+
+.stay-edit-save,
+.stay-edit-cancel {
+  height: 36px;
+  padding: 0 0.9rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-light);
+  background: var(--bg-glass);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.stay-edit-save {
+  border: none;
+  background: var(--gradient-primary);
+  color: #fff;
 }
 
 .stay-empty {
