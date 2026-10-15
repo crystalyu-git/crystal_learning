@@ -51,6 +51,10 @@ const STAY_PLACES = { TW: '台灣', OT: '其他' };
 // 行程跟集合A 日記共用同一個金鑰庫：加密後才落地，stays 是解密後的明文，只存在記憶體
 let stays = []; // [{ id, place: "TW" | "OT", start: "YYYY-MM-DD", end: "YYYY-MM-DD" }]
 let stayTravelJP = true; // 出發日、回程日是否算在日本
+// 在日的水電帳單，跟行程放在同一份密文裡。amount 是帳單全額，員工負擔另外乘 STAY_BILL_SHARE
+let stayBills = []; // [{ id, kind: "gas" | "elec", start: "YYYY-MM-DD", end: "YYYY-MM-DD", amount }]
+const STAY_BILL_KINDS = { gas: '瓦斯', elec: '電費' };
+const STAY_BILL_SHARE = 0.5;
 // 已用目前的金鑰把行程載進記憶體（或確認過根本沒有行程）。false 時不准顯示也不准寫入，
 // 否則會拿空陣列加密後蓋掉那份還沒解開的密文
 let stayReady = false;
@@ -1383,8 +1387,8 @@ async function rotateBeliefPassphrase(oldPass, newPass, onProgress = () => {}) {
   const newVerifier = await encryptBelief(BELIEF_VERIFIER_TEXT, newKey);
   const ts = Date.now();
   // 雲端與本機要放同一份密文，所以只加密一次。本來就沒有行程就不必憑空生一份
-  const newStayEnc = (stays.length > 0 || localStorage.getItem(STAY_STORE_KEY))
-    ? await encryptBelief(JSON.stringify({ stays, travelJP: stayTravelJP }), newKey)
+  const newStayEnc = (stays.length > 0 || stayBills.length > 0 || localStorage.getItem(STAY_STORE_KEY))
+    ? await encryptBelief(JSON.stringify(stayPayload()), newKey)
     : null;
 
   // 本機有的月份，聯集雲端有的月份。時間戳一律推進成 ts，其他裝置才會判定雲端較新而重拉
@@ -2476,6 +2480,11 @@ function switchView(viewName) {
 
   // Trigger view-specific updates
   if (viewName === 'dashboard') updateDashboard();
+  // 從知識庫某個主項目分頁按新增，類別就帶那個分頁；停在「全部」時沿用上次用過的類別。
+  // currentLangFilter 存的是顯示名稱，要反查回卡片實際的 lang 值，改過名的類別才對得上
+  if (viewName === 'add' && currentLangFilter !== 'all') {
+    setLangValue('inputLang', getLangKeyByLabel(currentLangFilter));
+  }
   if (viewName === 'review') startReviewSession();
   if (viewName === 'library') renderLibrary();
   if (viewName === 'habit') renderHabitTracker({ anchorToday: true });
@@ -3020,6 +3029,7 @@ function clearStayMemory() {
   stayEditingId = null;
   stays = [];
   stayTravelJP = true;
+  stayBills = [];
   stayReady = false;
   stayLocalStale = false;
   stayUndecryptable = false;
@@ -3028,6 +3038,12 @@ function clearStayMemory() {
 function applyStayData(data) {
   stays = (Array.isArray(data && data.stays) ? data.stays : []).filter(s => STAY_PLACES[s.place]);
   stayTravelJP = !data || data.travelJP !== false;
+  stayBills = (Array.isArray(data && data.bills) ? data.bills : []).filter(b => STAY_BILL_KINDS[b.kind]);
+}
+
+// 要加密的整份內容。bills 是後來加的欄位，舊版裝置解開後會忽略它
+function stayPayload() {
+  return { stays, travelJP: stayTravelJP, bills: stayBills };
 }
 
 function loadStayHeld() {
@@ -3125,7 +3141,7 @@ async function loadStaysFromLocal() {
 // 行程有異動：加密存本機並排程推上雲端。回傳是否真的存了
 async function commitStays() {
   if (!beliefKey || !stayReady || stayUndecryptable) return false;
-  storeStayCipher(await encryptBelief(JSON.stringify({ stays, travelJP: stayTravelJP })), Date.now());
+  storeStayCipher(await encryptBelief(JSON.stringify(stayPayload())), Date.now());
   pushHabitsToNotion();
   return true;
 }
@@ -3331,6 +3347,109 @@ function renderStayView() {
         <button type="button" class="stay-item-del" data-stay-id="${s.id}" title="刪除行程">×</button>
       </div>`;
     }).join('');
+
+  renderStayBills(start, end);
+}
+
+// 帳單期間的天數，頭尾都算（7/8–8/7 是 31 天，下一期從 8/8 接著開始）
+function stayBillDays(b) {
+  return Math.round((new Date(b.end) - new Date(b.start)) / 86400000) + 1;
+}
+
+// 帳單歸在哪個月看結束日，跟公司表格的「瓦斯8月(7/8-8/7)」一致
+function stayBillMonth(b) {
+  return b.end.slice(0, 7);
+}
+
+function formatYen(n) {
+  return `¥${n.toLocaleString('ja-JP', { maximumFractionDigits: 1 })}`;
+}
+
+// 只列跟這個年度有重疊的帳單，新的在上面。帳單期間跟 9/1 起算的年度對不齊，
+// 跨年度的那張（例如 8/8–9/7）兩個年度都列，平均也各自算進去
+function renderStayBills(yearStart, yearEnd) {
+  const table = $('#stayBillTable');
+  if (!table) return;
+  const bills = stayBills.filter(b => b.start <= yearEnd && b.end >= yearStart);
+  if (bills.length === 0) {
+    table.innerHTML = '';
+    $('#stayBillEmpty').style.display = '';
+    return;
+  }
+  $('#stayBillEmpty').style.display = 'none';
+
+  const byMonth = new Map();
+  bills.forEach(b => {
+    const key = stayBillMonth(b);
+    if (!byMonth.has(key)) byMonth.set(key, {});
+    const slot = byMonth.get(key);
+    (slot[b.kind] = slot[b.kind] || []).push(b);
+  });
+  const kinds = Object.keys(STAY_BILL_KINDS);
+  // 同一種帳單同一個月理論上只有一張；真的有兩張就合併計算
+  const stat = list => {
+    if (!list || list.length === 0) return null;
+    const share = list.reduce((sum, b) => sum + b.amount * STAY_BILL_SHARE, 0);
+    const days = list.reduce((sum, b) => sum + stayBillDays(b), 0);
+    return { share, days, daily: share / days };
+  };
+  const shortDate = key => key.slice(5).replace('-', '/').replace(/^0/, '').replace(/\/0/, '/');
+  // 帳單期間跟上面任何一段行程重疊（有幾天不在日本），金額就標淡黃色提醒
+  const tripDays = list => (list || []).some(b => stays.some(t => t.start <= b.end && t.end >= b.start));
+  const cells = (list) => {
+    const st = stat(list);
+    if (!st) return '<td class="zero">—</td><td class="zero">—</td>';
+    const share = tripDays(list)
+      ? `<span class="stay-bill-trip" title="這段期間有行程不在日本">${formatYen(st.share)}</span>`
+      : formatYen(st.share);
+    const periods = list.map(b => `<span class="stay-bill-period">${shortDate(b.start)}–${shortDate(b.end)}・${stayBillDays(b)}天
+      <button type="button" class="stay-bill-del" data-bill-id="${b.id}" title="刪除這張帳單">×</button></span>`).join('');
+    return `<td class="stay-bill-cell">${share}${periods}</td><td class="stay-bill-daily">${formatYen(Math.round(st.daily * 10) / 10)}</td>`;
+  };
+
+  const months = [...byMonth.keys()].sort().reverse();
+  const totals = {};
+  kinds.forEach(k => { totals[k] = stat(bills.filter(b => b.kind === k)); });
+  const sumDaily = slot => kinds.reduce((sum, k) => sum + (stat(slot[k])?.daily || 0), 0);
+
+  table.innerHTML = `
+    <thead>
+      <tr class="stay-quarter-row"><th></th>${kinds.map(k => `<th colspan="2">${STAY_BILL_KINDS[k]}</th>`).join('')}<th></th></tr>
+      <tr><th>月份</th>${kinds.map(() => '<th class="stay-q-start">負擔 50%</th><th>每日</th>').join('')}<th class="stay-q-start">每日合計</th></tr>
+    </thead>
+    <tbody>${months.map(key => {
+      const slot = byMonth.get(key);
+      const [y, m] = key.split('-').map(Number);
+      const trip = kinds.some(k => tripDays(slot[k])) ? ' stay-bill-trip' : '';
+      return `<tr><th>${y}/${m}月</th>${kinds.map(k => cells(slot[k])).join('')}<td class="stay-total stay-q-start${trip}">${formatYen(Math.round(sumDaily(slot) * 10) / 10)}</td></tr>`;
+    }).join('')}</tbody>
+    <tfoot><tr><th>平均</th>${kinds.map(k => {
+      const t = totals[k];
+      return t ? `<td class="stay-q-start">${t.days}天</td><td class="stay-bill-daily">${formatYen(Math.round(t.daily * 10) / 10)}</td>` : '<td class="zero stay-q-start">—</td><td class="zero">—</td>';
+    }).join('')}<td class="stay-total stay-q-start">${formatYen(Math.round(kinds.reduce((sum, k) => sum + (totals[k]?.daily || 0), 0) * 10) / 10)}</td></tr></tfoot>`;
+}
+
+// 一行一張帳單：「瓦斯 2026/7/8-2026/8/7 1,452」。類型、兩個完整日期、帳單全額，順序跟分隔符號不拘。
+// 回傳 { bills, errors }，errors 是看不懂的行號
+function parseStayBills(text) {
+  const bills = [];
+  const errors = [];
+  text.split('\n').forEach((raw, i) => {
+    const line = raw.trim();
+    if (!line) return;
+    const kind = /瓦斯|ガス|gas/i.test(line) ? 'gas' : /電|elec/i.test(line) ? 'elec' : null;
+    const dates = [...line.matchAll(/(\d{4})[\/.-](\d{1,2})[\/.-](\d{1,2})/g)]
+      .map(m => stayDateKey(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+    const rest = line.replace(/(\d{4})[\/.-](\d{1,2})[\/.-](\d{1,2})/g, ' ');
+    const amountMatch = rest.match(/(\d[\d,]*(?:\.\d+)?)(?!.*\d)/);
+    const amount = amountMatch ? Number(amountMatch[1].replace(/,/g, '')) : NaN;
+    if (!kind || dates.length !== 2 || dates[1] < dates[0] || !(amount > 0)) {
+      errors.push(i + 1);
+      return;
+    }
+    bills.push({ kind, start: dates[0], end: dates[1], amount });
+  });
+  return { bills, errors };
 }
 
 // 檢查一筆行程能不能存，不行就回傳要顯示的訊息。ignoreId 是正在編輯的那筆，
@@ -3361,7 +3480,7 @@ function initStay() {
       renderStayView();
       return false;
     }
-    const before = { stays: [...stays], travelJP: stayTravelJP };
+    const before = { stays: [...stays], travelJP: stayTravelJP, bills: [...stayBills] };
     mutate();
     const saved = await commitStays();
     if (!saved) applyStayData(before);
@@ -3424,6 +3543,35 @@ function initStay() {
       stayEditingId = null;
       renderStayView();
     }
+  });
+  $('#stayBillForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const input = $('#stayBillInput');
+    const { bills, errors } = parseStayBills(input.value);
+    if (errors.length) {
+      showToast(`第 ${errors.join('、')} 行看不懂，格式是「瓦斯 2026/7/8-2026/8/7 1452」`, 4000);
+      return;
+    }
+    if (bills.length === 0) return;
+    // 同類型、同一天開始的視為同一張，用新的金額蓋過去，打錯了重貼一次就好
+    const saved = await applyStayChange(() => {
+      // 換成新物件而不是就地改：存不了時要靠 before 那份淺拷貝退回去
+      bills.forEach(nb => {
+        const old = stayBills.find(b => b.kind === nb.kind && b.start === nb.start);
+        stayBills = old
+          ? stayBills.map(b => (b === old ? { ...old, ...nb } : b))
+          : [...stayBills, { id: generateId(), ...nb }];
+      });
+    });
+    if (saved) {
+      input.value = '';
+      showToast(`已加入 ${bills.length} 張帳單`);
+    }
+  });
+  $('#stayBillTable').addEventListener('click', (e) => {
+    const btn = e.target.closest('.stay-bill-del');
+    if (!btn) return;
+    applyStayChange(() => { stayBills = stayBills.filter(b => b.id !== btn.dataset.billId); });
   });
   $('#stayTravelJP').addEventListener('change', (e) => {
     const checked = e.target.checked;

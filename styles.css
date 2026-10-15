@@ -3984,6 +3984,73 @@ select.form-input {
   font-size: 0.9rem;
 }
 
+.stay-bill-title {
+  margin: 2rem 0 0.75rem;
+  font-size: 1.05rem;
+}
+
+.stay-bill-table td.stay-bill-cell {
+  text-align: right;
+}
+
+.stay-bill-period {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.15rem;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.stay-bill-trip {
+  color: #fde68a;
+}
+
+.stay-bill-daily {
+  color: var(--text-accent);
+  font-weight: 700;
+}
+
+.stay-bill-table tfoot th,
+.stay-bill-table tfoot td {
+  border-top: 1px solid var(--border-light);
+  border-bottom: none;
+}
+
+.stay-bill-del {
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.stay-bill-del:hover {
+  color: var(--accent-danger);
+  background: var(--bg-glass-hover);
+}
+
+.stay-bill-form {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  margin-bottom: 1.25rem;
+}
+
+.stay-bill-form textarea {
+  flex: 1;
+  min-width: 0;
+  resize: vertical;
+  font-variant-numeric: tabular-nums;
+}
+
+.stay-bill-form .habit-add-btn {
+  height: 44px;
+  white-space: nowrap;
+}
+
 @media (max-width: 768px) {
   .stay-form-sep {
     display: none;

@@ -32,7 +32,7 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;700&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=2.00">
+    <link rel="stylesheet" href="styles.css?v=2.04">
     <!-- 主題早期初始化：防止 Safari 快取舊 app.js 導致閃白 -->
     <script>
     (function() {
@@ -914,6 +914,17 @@
             </label>
 
             <div class="stay-list" id="stayList"></div>
+
+            <h3 class="stay-bill-title">水電費每日平均（員工負擔 50%）</h3>
+            <p class="stay-empty" id="stayBillEmpty">這個年度還沒有帳單。在下面貼上，一行一張。</p>
+            <div class="stay-table-scroll">
+                <table class="stay-table stay-bill-table" id="stayBillTable"></table>
+            </div>
+            <form class="stay-bill-form" id="stayBillForm">
+                <textarea id="stayBillInput" class="form-input" rows="3" aria-label="帳單"
+                    placeholder="一行一張：類型 開始日-結束日 帳單全額&#10;瓦斯 2026/7/8-2026/8/7 1452&#10;電費 2026/7/6-2026/8/5 3479"></textarea>
+                <button type="submit" class="habit-add-btn">加入帳單</button>
+            </form>
             </div>
         </section>
 
@@ -1318,8 +1329,8 @@
     <!-- wanakana 改為本地檔案：原本從 unpkg 載，第三方 CDN 或該套件被接管就能在本站
          同源執行任意程式碼、直接讀走 localStorage 裡的資料。tesseract.js 全專案 0 次
          呼叫（OCR 走後端 Google Vision），一併移除 -->
-    <script src="vendor/wanakana-5.3.1.min.js?v=2.00"></script>
-    <script src="app.js?v=2.00"></script>
+    <script src="vendor/wanakana-5.3.1.min.js?v=2.04"></script>
+    <script src="app.js?v=2.04"></script>
 
     <!-- OCR Result Overlay -->
     <div id="ocrOverlay"
