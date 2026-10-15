@@ -50,7 +50,9 @@ const STAY_PLACES = { TW: '台灣', OT: '其他' };
 // 排除法：只登記離開日本的行程，沒登記到的日子一律算在日本
 // 行程跟集合A 日記共用同一個金鑰庫：加密後才落地，stays 是解密後的明文，只存在記憶體
 let stays = []; // [{ id, place: "TW" | "OT", start: "YYYY-MM-DD", end: "YYYY-MM-DD" }]
-let stayTravelJP = true; // 出發日、回程日是否算在日本
+// 行程頭尾的移動日算哪邊：both 出發日與回程日都算日本、return 只有回程日算日本、none 都不算
+const STAY_TRAVEL_MODES = ['both', 'return', 'none'];
+let stayTravelMode = 'both';
 // 在日的水電帳單，跟行程放在同一份密文裡。amount 是帳單全額，員工負擔另外乘 STAY_BILL_SHARE
 let stayBills = []; // [{ id, kind: "gas" | "elec", start: "YYYY-MM-DD", end: "YYYY-MM-DD", amount }]
 const STAY_BILL_KINDS = { gas: '瓦斯', elec: '電費' };
@@ -3028,7 +3030,7 @@ const STAY_LEGACY_TRAVEL_KEY = 'crystal_stay_travel_jp';
 function clearStayMemory() {
   stayEditingId = null;
   stays = [];
-  stayTravelJP = true;
+  stayTravelMode = 'both';
   stayBills = [];
   stayReady = false;
   stayLocalStale = false;
@@ -3037,13 +3039,17 @@ function clearStayMemory() {
 
 function applyStayData(data) {
   stays = (Array.isArray(data && data.stays) ? data.stays : []).filter(s => STAY_PLACES[s.place]);
-  stayTravelJP = !data || data.travelJP !== false;
+  // travelMode 是後來加的；只有舊的 travelJP 布林值時照舊版的意思換算
+  stayTravelMode = STAY_TRAVEL_MODES.includes(data && data.travelMode)
+    ? data.travelMode
+    : (!data || data.travelJP !== false ? 'both' : 'none');
   stayBills = (Array.isArray(data && data.bills) ? data.bills : []).filter(b => STAY_BILL_KINDS[b.kind]);
 }
 
 // 要加密的整份內容。bills 是後來加的欄位，舊版裝置解開後會忽略它
 function stayPayload() {
-  return { stays, travelJP: stayTravelJP, bills: stayBills };
+  // travelJP 留給還沒更新的裝置讀；「只有回程日」它表達不了，只能當成不算
+  return { stays, travelJP: stayTravelMode === 'both', travelMode: stayTravelMode, bills: stayBills };
 }
 
 function loadStayHeld() {
@@ -3208,13 +3214,16 @@ function stayQuarter(dateKey) {
 }
 
 // 某一天人在哪。沒被任何行程蓋到就是日本。行程的頭尾兩天是移動日（當天還有一段時間在日本），
-// 算哪邊由 stayTravelJP 決定——270 天的門檻只差幾天時，這個差別會翻盤。
+// 算哪邊由 stayTravelMode 決定——270 天的門檻只差幾天時，這個差別會翻盤。
 // 只待一天的行程，以及兩段行程接在同一天（從台灣直接飛別處）不算移動日
 function stayPlaceOn(key) {
   const here = stays.filter(s => s.start <= key && key <= s.end);
   if (here.length === 0) return 'JP';
   const s = here[0];
-  if (stayTravelJP && here.length === 1 && s.start !== s.end && (s.start === key || s.end === key)) return 'JP';
+  if (here.length === 1 && s.start !== s.end) {
+    if (stayTravelMode === 'both' && (s.start === key || s.end === key)) return 'JP';
+    if (stayTravelMode === 'return' && s.end === key) return 'JP';
+  }
   return (here.find(x => x.place === 'TW') || s).place;
 }
 
@@ -3270,7 +3279,7 @@ function renderStayView() {
   const start = stayDateKey(stayYear, 8, 1);
   const end = stayDateKey(stayYear + 1, 7, 31);
   $('#stayYearLabel').textContent = `${stayYear}年度（${stayYear}/9/1 - ${stayYear + 1}/8/31）`;
-  $('#stayTravelJP').checked = stayTravelJP;
+  $('#stayTravelMode').value = stayTravelMode;
 
   const { months, total, jpSoFar, days } = computeStayYear(stayYear);
   const jp = total.JP;
@@ -3480,7 +3489,7 @@ function initStay() {
       renderStayView();
       return false;
     }
-    const before = { stays: [...stays], travelJP: stayTravelJP, bills: [...stayBills] };
+    const before = { stays: [...stays], travelMode: stayTravelMode, bills: [...stayBills] };
     mutate();
     const saved = await commitStays();
     if (!saved) applyStayData(before);
@@ -3573,9 +3582,9 @@ function initStay() {
     if (!btn) return;
     applyStayChange(() => { stayBills = stayBills.filter(b => b.id !== btn.dataset.billId); });
   });
-  $('#stayTravelJP').addEventListener('change', (e) => {
-    const checked = e.target.checked;
-    applyStayChange(() => { stayTravelJP = checked; });
+  $('#stayTravelMode').addEventListener('change', (e) => {
+    const mode = e.target.value;
+    applyStayChange(() => { stayTravelMode = mode; });
   });
   $('#stayPrevYear').addEventListener('click', () => { touchBeliefUnlock(); stayYear--; renderStayView(); });
   $('#stayNextYear').addEventListener('click', () => { touchBeliefUnlock(); stayYear++; renderStayView(); });

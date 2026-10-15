@@ -3881,6 +3881,15 @@ select.form-input {
   cursor: pointer;
 }
 
+.stay-travel-toggle span {
+  white-space: nowrap;
+}
+
+.stay-travel-toggle .form-input {
+  width: auto;
+  max-width: 100%;
+}
+
 .stay-item {
   display: flex;
   align-items: center;

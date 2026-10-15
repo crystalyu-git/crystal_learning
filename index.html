@@ -32,7 +32,7 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;700&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=2.04">
+    <link rel="stylesheet" href="styles.css?v=2.05">
     <!-- 主題早期初始化：防止 Safari 快取舊 app.js 導致閃白 -->
     <script>
     (function() {
@@ -909,8 +909,12 @@
                 <button type="submit" class="habit-add-btn">新增行程</button>
             </form>
             <label class="stay-travel-toggle">
-                <input type="checkbox" id="stayTravelJP">
-                <span>出發日與回程日算在日本</span>
+                <span>移動日</span>
+                <select id="stayTravelMode" class="form-input">
+                    <option value="both">出發日與回程日都算在日本</option>
+                    <option value="return">只有回程日算在日本</option>
+                    <option value="none">出發日與回程日都不算在日本</option>
+                </select>
             </label>
 
             <div class="stay-list" id="stayList"></div>
@@ -1329,8 +1333,8 @@
     <!-- wanakana 改為本地檔案：原本從 unpkg 載，第三方 CDN 或該套件被接管就能在本站
          同源執行任意程式碼、直接讀走 localStorage 裡的資料。tesseract.js 全專案 0 次
          呼叫（OCR 走後端 Google Vision），一併移除 -->
-    <script src="vendor/wanakana-5.3.1.min.js?v=2.04"></script>
-    <script src="app.js?v=2.04"></script>
+    <script src="vendor/wanakana-5.3.1.min.js?v=2.05"></script>
+    <script src="app.js?v=2.05"></script>
 
     <!-- OCR Result Overlay -->
     <div id="ocrOverlay"
