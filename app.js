@@ -4639,7 +4639,9 @@ function initCategorySuggestions() {
   });
 
   document.addEventListener('pointerdown', (e) => {
-    if (!wrapper.contains(e.target)) closeCategorySuggestions();
+    // 不能用 wrapper.contains(e.target)：點組名時面板已先重繪，被點的元素脫離 DOM，
+    // contains 會判成「點在外面」而把剛展開的選單關掉。composedPath 在派送當下就算好，不受重繪影響
+    if (!e.composedPath().includes(wrapper)) closeCategorySuggestions();
   });
 
   input.addEventListener('keydown', (e) => {
