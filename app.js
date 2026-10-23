@@ -4536,6 +4536,9 @@ let libraryShowAll = false;
 // 不用原生 <datalist>：iOS Safari 不會為它畫下拉選單，選項只會出現在鍵盤候選字條，
 // 使用者看起來就是「點了沒反應」。
 let _filterCategories = [];
+// 「13-01」這種標籤的前綴（13）；展開過的組在這次開啟 App 期間都保持展開
+const CATEGORY_GROUP_RE = /^(\d+)-\d+$/;
+const _expandedCategoryGroups = new Set();
 
 function renderCategorySuggestions() {
   const panel = $('#filterCategoryList');
@@ -4553,9 +4556,38 @@ function renderCategorySuggestions() {
     closeCategorySuggestions();
     return;
   }
-  panel.innerHTML = list.map(cat =>
-    `<div class="filter-suggestion-item" role="option" data-val="${escapeHtml(cat)}">${escapeHtml(cat)}</div>`
-  ).join('');
+  const itemHtml = (cat, child) =>
+    `<div class="filter-suggestion-item${child ? ' is-child' : ''}" role="option" data-val="${escapeHtml(cat)}">${escapeHtml(cat)}</div>`;
+
+  // 正在打字篩選時直接平鋪結果：都已經縮小範圍了，再收合反而要多點一次
+  if (query && !exact) {
+    panel.innerHTML = list.map(cat => itemHtml(cat, false)).join('');
+  } else {
+    // 對話編號這類「13-01、13-02…」的標籤一章就十幾個，會把其他分類擠到很下面，
+    // 依前綴收成一組，點組名才展開。只有一個的不收，收了反而多點一次
+    const groups = new Map();
+    list.forEach(cat => {
+      const m = cat.match(CATEGORY_GROUP_RE);
+      if (m) groups.set(m[1], [...(groups.get(m[1]) || []), cat]);
+    });
+    // 目前選的分類所在的組自動展開，不然打開下拉看不到自己選了哪個
+    const cur = input.value.trim().match(CATEGORY_GROUP_RE);
+    if (cur && exact) _expandedCategoryGroups.add(cur[1]);
+
+    const rendered = new Set();
+    panel.innerHTML = list.map(cat => {
+      const m = cat.match(CATEGORY_GROUP_RE);
+      const members = m && groups.get(m[1]);
+      if (!members || members.length < 2) return itemHtml(cat, false);
+      if (rendered.has(m[1])) return '';
+      rendered.add(m[1]);
+      const open = _expandedCategoryGroups.has(m[1]);
+      return `<div class="filter-suggestion-group" role="button" aria-expanded="${open}" data-group="${escapeHtml(m[1])}">`
+        + `<span class="filter-group-arrow">${open ? '▾' : '▸'}</span>${escapeHtml(m[1])}`
+        + `<span class="filter-group-count">${members.length}</span></div>`
+        + (open ? members.map(c => itemHtml(c, true)).join('') : '');
+    }).join('');
+  }
   panel.style.display = 'block';
   input.setAttribute('aria-expanded', 'true');
 }
@@ -4583,6 +4615,18 @@ function initCategorySuggestions() {
 
   // 用 pointerdown 並擋掉預設行為，避免 input 先 blur 導致面板消失後才收到 click
   panel.addEventListener('pointerdown', (e) => {
+    const group = e.target.closest('.filter-suggestion-group');
+    if (group) {
+      e.preventDefault();
+      const key = group.dataset.group;
+      if (_expandedCategoryGroups.has(key)) _expandedCategoryGroups.delete(key);
+      else _expandedCategoryGroups.add(key);
+      // 重繪會換掉整個面板，捲動位置要自己留著，不然展開後會跳回最上面
+      const scroll = panel.scrollTop;
+      renderCategorySuggestions();
+      panel.scrollTop = scroll;
+      return;
+    }
     const item = e.target.closest('.filter-suggestion-item');
     if (!item) return;
     e.preventDefault();

@@ -1556,8 +1556,37 @@ select.form-input {
   color: var(--text-primary);
 }
 
-.filter-suggestion-item + .filter-suggestion-item {
+.filter-suggestion-item + .filter-suggestion-item,
+.filter-suggestion-group + .filter-suggestion-item,
+.filter-suggestion-item + .filter-suggestion-group,
+.filter-suggestion-group + .filter-suggestion-group {
   border-top: 1px solid var(--border-light);
+}
+
+/* 「13-01」這類標籤收成一組，點組名展開 */
+.filter-suggestion-group {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.55rem 0.85rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+}
+
+.filter-group-arrow {
+  width: 0.8rem;
+  color: var(--text-muted);
+}
+
+.filter-group-count {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.filter-suggestion-item.is-child {
+  padding-left: 2.05rem;
 }
 
 .filter-suggestion-item:active {
@@ -1565,7 +1594,15 @@ select.form-input {
   color: var(--text-primary);
 }
 
+.filter-suggestion-group:active {
+  background: color-mix(in srgb, var(--accent-primary) 18%, transparent);
+}
+
 @media (hover: hover) and (pointer: fine) {
+  .filter-suggestion-group:hover {
+    background: color-mix(in srgb, var(--accent-primary) 12%, transparent);
+  }
+
   .filter-suggestion-item:hover {
     background: color-mix(in srgb, var(--accent-primary) 12%, transparent);
     color: var(--text-primary);
