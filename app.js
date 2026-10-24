@@ -2279,12 +2279,17 @@ window.__ttsUtterances = window.__ttsUtterances || [];
 function speakText(text, lang = 'en-US', btnElement = null) {
   if (!text || !window.speechSynthesis) return;
 
+  // 正在播或正在下載的音檔先停掉，下載到一半的那個回來後也不會再播
+  playbackGen++;
+  stopAudioPlayback();
+
   // Only cancel if something is actively playing. Calling cancel on an idle engine
   // sometimes causes the next speak() to be silently dropped in Chrome.
   const wasSpeaking = window.speechSynthesis.speaking || window.speechSynthesis.pending;
   if (wasSpeaking) window.speechSynthesis.cancel();
 
   const utterance = new SpeechSynthesisUtterance(text);
+  lastTtsUtterance = utterance;
 
   // Store reference to prevent GC
   window.__ttsUtterances.push(utterance);
@@ -5523,6 +5528,12 @@ document.addEventListener('click', unlockMediaPlayback, true);
 function playOrSpeak(card, defaultText, lang, btnElement) {
   const langCode = getLangCode(lang);
   if (card.audioUrl) {
+    // 音檔跟系統發音是兩套播放器，不主動停掉對方就會疊在一起
+    playbackGen++;
+    stopSpeechPlayback();
+    // 上一個音檔的按鈕動畫也要收掉：換來源時 onended 會被清掉，不收就會一直閃
+    stopAudioPlayback();
+
     const isDriveUrl = isGoogleDriveUrl(card.audioUrl);
     const ytId = extractYouTubeId(card.audioUrl);
 
@@ -5668,6 +5679,31 @@ function initAudioActions() {
 
 // Global audio object to prevent overlapping playback
 let currentAudio = null;
+// 正在播（或正在下載準備播）音檔的按鈕，被別的發音打斷時要把它的動畫拿掉
+let currentAudioBtn = null;
+// 每按一次發音就 +1。Drive 音檔下載要好幾秒，下載完發現已經不是最新的那次就別播了，
+// 不然會跟後來按的發音疊在一起
+let playbackGen = 0;
+// 每次叫 playOnSharedAudio 就 +1，用來判斷共用 audio 元素現在歸誰管
+let sharedAudioToken = 0;
+// 最近一次 speakText 唸的那句；只取消自己唸的，不去動 iOS 解鎖用的那句空白
+let lastTtsUtterance = null;
+
+function stopAudioPlayback() {
+  if (sharedAudio && !sharedAudio.paused) {
+    try { sharedAudio.pause(); } catch (e) { }
+  }
+  if (currentAudioBtn) {
+    currentAudioBtn.classList.remove('speaking');
+    currentAudioBtn = null;
+  }
+}
+
+function stopSpeechPlayback() {
+  if (!lastTtsUtterance || !window.speechSynthesis) return;
+  lastTtsUtterance = null;
+  if (window.speechSynthesis.speaking || window.speechSynthesis.pending) window.speechSynthesis.cancel();
+}
 
 // fileId → blob object URL（抓過的音檔，重播直接用不再連網）
 const driveBlobCache = {};
@@ -5711,6 +5747,7 @@ function writeDriveUnplayable(patch) {
 function playOnSharedAudio(src, btnElement, timeoutMs = 2000, startSeconds = 0) {
   return new Promise((resolve, reject) => {
     const audio = getSharedAudio();
+    const token = ++sharedAudioToken;
     audio.onended = null;
     audio.onerror = null;
     audio.onloadedmetadata = null;
@@ -5734,7 +5771,15 @@ function playOnSharedAudio(src, btnElement, timeoutMs = 2000, startSeconds = 0) 
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      audio.onerror = null;
+      // 已經被下一次播放接手的話，元素上的來源和事件都是新的那次的，不能動
+      if (token === sharedAudioToken) {
+        audio.onerror = null;
+        audio.onloadedmetadata = null;
+        // 逾時只是我們不等了，瀏覽器還在背景載入，play() 也還在排隊，
+        // 不 pause 的話等它載好會自己播出來，跟後面改用的系統發音疊在一起。
+        // 只 pause 不清 src：iOS 的播放解鎖綁在這顆元素上，重新 load 有可能被重置
+        try { audio.pause(); } catch (e) { }
+      }
       reject(err || new Error('audio error'));
     };
     const ok = () => {
@@ -5743,9 +5788,14 @@ function playOnSharedAudio(src, btnElement, timeoutMs = 2000, startSeconds = 0) 
       clearTimeout(timer);
       seek();
       currentAudio = audio;
+      currentAudioBtn = btnElement;
       if (btnElement) btnElement.classList.add('speaking');
-      audio.onended = () => { if (btnElement) btnElement.classList.remove('speaking'); };
-      audio.onerror = () => { if (btnElement) btnElement.classList.remove('speaking'); };
+      const done = () => {
+        if (btnElement) btnElement.classList.remove('speaking');
+        if (currentAudioBtn === btnElement) currentAudioBtn = null;
+      };
+      audio.onended = done;
+      audio.onerror = done;
       resolve();
     };
 
@@ -5874,6 +5924,15 @@ async function playGoogleDriveAudio(url, btnElement, onErrorCallback) {
   // 起始秒數寫在卡片網址的 hash 上，但真正播的是 blob／download 網址，要自己帶過去
   const startSeconds = getAudioStartSeconds(url) || 0;
 
+  const gen = playbackGen;
+  // 中途使用者又按了別的發音：這次就不播了，也不能退回系統發音或開新分頁
+  const superseded = () => {
+    if (gen === playbackGen) return false;
+    if (btnElement && btnElement !== currentAudioBtn) btnElement.classList.remove('speaking');
+    return true;
+  };
+
+  currentAudioBtn = btnElement;
   if (btnElement) btnElement.classList.add('speaking');
 
   // 抓過就直接播，不再連網
@@ -5882,6 +5941,8 @@ async function playGoogleDriveAudio(url, btnElement, onErrorCallback) {
       await playOnSharedAudio(driveBlobCache[fileId], btnElement, 2000, startSeconds);
       return;
     } catch (err) {
+      // 被新的播放打斷不代表 blob 壞了，別把快取丟掉
+      if (superseded()) return;
       console.warn('Cached blob playback failed:', err);
       URL.revokeObjectURL(driveBlobCache[fileId]);
       delete driveBlobCache[fileId];
@@ -5903,6 +5964,7 @@ async function playGoogleDriveAudio(url, btnElement, onErrorCallback) {
       await playOnSharedAudio(driveDownloadUrl(fileId), btnElement, 5000, startSeconds);
       return;
     } catch (err) {
+      if (superseded()) return;
       console.warn('drive-direct-stream failed:', err);
       errors.push(`drive-direct-stream: ${err.message}`);
     }
@@ -5917,14 +5979,18 @@ async function playGoogleDriveAudio(url, btnElement, onErrorCallback) {
   for (const [name, getBlobUrl] of strategies) {
     try {
       const blobUrl = await getBlobUrl();
+      // 下載期間使用者已經按了別的，blob 留在快取裡下次用，這次不播
+      if (superseded()) return;
       await playOnSharedAudio(blobUrl, btnElement, 4000, startSeconds);
       return; // Success
     } catch (err) {
+      if (superseded()) return;
       console.warn(`${name} failed:`, err);
       errors.push(`${name}: ${err.message}`);
     }
   }
 
+  if (superseded()) return;
   giveUpDriveAudio(url, fileId, startSeconds, errors, btnElement, onErrorCallback, 8000);
 }
 
