@@ -516,65 +516,238 @@ body {
   color: var(--text-secondary);
 }
 
-/* ── Schedule Timeline ── */
-.schedule-timeline {
+/* ── Review Scope（儀表板勾選複習標籤） ── */
+.review-scope-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.review-scope-head .section-title {
+  margin-bottom: 0.5rem;
+}
+
+.review-scope-clear {
+  background: none;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  padding: 0.3rem 0.85rem;
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.review-scope-clear:hover {
+  color: var(--text-primary);
+  border-color: var(--border-accent);
+}
+
+.review-scope-summary {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-bottom: 1rem;
+}
+
+.review-scope-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.scope-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.9rem;
+  background: var(--bg-glass);
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: all var(--transition-fast);
+}
+
+.scope-chip:hover {
+  background: var(--bg-glass-hover);
+}
+
+.scope-chip.is-checked {
+  background: color-mix(in srgb, var(--accent-primary) 18%, transparent);
+  border-color: var(--border-accent);
+}
+
+.scope-chip input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent-primary);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.scope-chip-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.scope-chip-count {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--accent-primary);
+  white-space: nowrap;
+}
+
+.scope-chip-count small {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.scope-chip-leech .scope-chip-name {
+  color: #f87171;
+}
+
+.scope-group {
+  display: inline-flex;
+  align-items: stretch;
+}
+
+.scope-group-chip {
+  border-radius: 999px 0 0 999px;
+  border-right: none;
+}
+
+.scope-group-toggle {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.75rem;
+  background: var(--bg-glass);
+  border: 1px solid var(--border-subtle);
+  border-radius: 0 999px 999px 0;
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.scope-group.is-checked .scope-group-toggle {
+  border-color: var(--border-accent);
+}
+
+.scope-group-toggle:hover {
+  background: var(--bg-glass-hover);
+  color: var(--text-primary);
+}
+
+/* 展開的組員自成一列，放在組名正下方 */
+.scope-group-members {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.25rem 0 0.5rem 1rem;
+  border-left: 2px solid var(--border-subtle);
+  margin-left: 0.75rem;
+}
+
+.scope-chip.is-child {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.8rem;
+}
+
+/* ── 今日打卡列表（儀表板） ── */
+.checkin-today-count {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.checkin-today-list {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
 }
 
-.schedule-day {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  padding: 0.875rem 1.25rem;
+.checkin-today-item {
+  padding: 0.7rem 1rem;
   background: var(--bg-glass);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
+  cursor: pointer;
   transition: all var(--transition-fast);
 }
 
-.schedule-day:hover {
+.checkin-today-item:hover {
   background: var(--bg-glass-hover);
 }
 
-.schedule-date {
-  font-weight: 600;
-  font-size: 0.85rem;
-  color: var(--text-accent);
-  min-width: 80px;
+.checkin-today-item.is-open {
+  border-color: var(--border-accent);
 }
 
-.schedule-count {
-  display: inline-flex;
+.checkin-today-row {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  min-width: 28px;
-  height: 28px;
-  padding: 0 0.5rem;
-  border-radius: 14px;
-  font-size: 0.8rem;
-  font-weight: 700;
+  gap: 0.75rem;
+  min-width: 0;
 }
 
-.schedule-count.today {
-  background: rgba(239, 68, 68, 0.2);
-  color: #f87171;
+.checkin-today-speak {
+  flex-shrink: 0;
 }
 
-.schedule-count.tomorrow {
-  background: rgba(245, 158, 11, 0.2);
-  color: #fbbf24;
+.checkin-today-word {
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
 }
 
-.schedule-count.later {
-  background: color-mix(in srgb, var(--accent-primary) 15%, transparent);
-  color: var(--accent-primary);
-}
-
-.schedule-label {
+.checkin-today-meaning {
+  margin-left: auto;
   font-size: 0.85rem;
   color: var(--text-secondary);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.checkin-today-detail {
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.checkin-today-pron {
+  font-size: 0.85rem;
+  color: var(--text-accent);
+  margin-bottom: 0.4rem;
+}
+
+.checkin-today-example {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 手機上意思換到單字下一行，不跟單字擠同一列 */
+@media (max-width: 600px) {
+  .checkin-today-row {
+    flex-wrap: wrap;
+  }
+
+  .checkin-today-meaning {
+    flex-basis: 100%;
+    margin-left: calc(30px + 0.75rem);
+    text-align: left;
+  }
 }
 
 /* ── Empty State ── */
@@ -1145,6 +1318,13 @@ select.form-input {
   color: var(--text-primary);
 }
 
+.card-record {
+  margin-top: 0.75rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+
 .card-example {
   font-size: 0.9rem;
   color: var(--text-secondary);
@@ -1563,8 +1743,14 @@ select.form-input {
   border-top: 1px solid var(--border-light);
 }
 
-/* 「13-01」這類標籤收成一組，點組名展開 */
+/* 「13-01」這類標籤收成一組，點組名展開。
+   展開的組捲動時組名黏在面板頂端，不用捲回去就能點組名收合 */
 .filter-suggestion-group {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background-color: var(--bg-primary);
+  background-image: linear-gradient(var(--bg-glass), var(--bg-glass));
   display: flex;
   align-items: center;
   gap: 0.4rem;
@@ -2212,6 +2398,19 @@ select.form-input {
   cursor: pointer;
   font-family: var(--font-sans);
   line-height: 1;
+}
+
+/* 複習紀錄：忘記次數 · 最近評分 · 上次複習 */
+.library-card-record {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin: 0.25rem 0 0.5rem;
+  letter-spacing: 0.02em;
+}
+
+.library-card-record.is-leech,
+.card-record.is-leech {
+  color: #f87171;
 }
 
 .library-card-footer {

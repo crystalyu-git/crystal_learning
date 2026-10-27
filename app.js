@@ -2462,9 +2462,8 @@ function initNavigation() {
     refreshFromCloud();
   });
 
-  // Quick actions
-  $('#quickReview').addEventListener('click', () => switchView('review'));
-  $('#quickAdd').addEventListener('click', () => switchView('add'));
+  initReviewScope();
+  initCheckinToday();
   $('#emptyAddBtn').addEventListener('click', () => switchView('add'));
   $('#backToDashboard').addEventListener('click', () => switchView('dashboard'));
 }
@@ -2515,84 +2514,305 @@ function updateDateDisplay() {
 
 // ── Dashboard ──
 function updateDashboard() {
-  const activeCards = getCardsByLang();
+  const scopeCards = getReviewScopeCards();
   const today = getToday();
-  const dueCards = activeCards.filter(c => c.nextReview <= today);
-  const masteredCards = activeCards.filter(c => c.level >= 5);
+  const dueCards = scopeCards.filter(c => c.nextReview <= today);
+  const masteredCards = scopeCards.filter(c => c.level >= 5);
 
-  // Update stats
-  $('#statTotal').textContent = activeCards.length;
+  // 統計跟著複習範圍走，數字才對得上按「複習」後實際會出現的卡
+  $('#statTotal').textContent = scopeCards.length;
   $('#statDue').textContent = dueCards.length;
   $('#statMastered').textContent = masteredCards.length;
 
   // Streak
   const streak = loadStreak();
-  const todayStr = new Date().toDateString();
   $('#statStreak').textContent = streak.count;
 
-  // Review count label
-  if (dueCards.length > 0) {
-    $('#reviewCountLabel').textContent = `有 ${dueCards.length} 張卡片待複習`;
-  } else {
-    $('#reviewCountLabel').textContent = '太棒了！沒有待複習的卡片';
-  }
-
-  // Schedule timeline
-  renderSchedule(activeCards);
+  renderReviewScope();
+  renderCheckinToday();
 }
 
+// ── 今日打卡列表（儀表板） ──
+// 點開過的卡在這次開啟 App 期間保持展開
+const _expandedCheckinCards = new Set();
 
-function renderSchedule(filteredCards) {
-  const timeline = $('#scheduleTimeline');
-  const today = getToday();
+function getCheckinTodayCards() {
+  const key = todayKey();
+  return getCardsByLang()
+    .filter(c => isCardChecked(c.id, key))
+    .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+}
 
-  if (!filteredCards || filteredCards.length === 0) {
-    timeline.innerHTML = `
-      <div class="empty-state small">
-        <p>尚無排程，請先新增字句！</p>
-      </div>`;
+function renderCheckinToday() {
+  const list = $('#checkinTodayList');
+  if (!list) return;
+  const checked = getCheckinTodayCards();
+  $('#checkinTodayCount').textContent = checked.length ? `（${checked.length}）` : '';
+  $('#checkinPracticeBtn').style.display = checked.length ? '' : 'none';
+
+  if (checked.length === 0) {
+    list.innerHTML = `<div class="empty-state small"><p>今天還沒有打卡，在知識庫卡片勾「今日打卡」就會出現在這裡</p></div>`;
     return;
   }
 
-  // Group cards by review date
-  const groups = {};
-  filteredCards.forEach(card => {
-    const reviewDate = new Date(card.nextReview);
-    const dateKey = new Date(reviewDate.getFullYear(), reviewDate.getMonth(), reviewDate.getDate()).getTime();
-    if (!groups[dateKey]) groups[dateKey] = [];
-    groups[dateKey].push(card);
-  });
-
-  // Sort and display the next 7 groups
-  const sortedDates = Object.keys(groups).map(Number).sort((a, b) => a - b).slice(0, 7);
-
-  if (sortedDates.length === 0) {
-    timeline.innerHTML = `
-      <div class="empty-state small">
-        <p>尚無排程</p>
-      </div>`;
-    return;
-  }
-
-  timeline.innerHTML = sortedDates.map(dateKey => {
-    const count = groups[dateKey].length;
-    const diff = daysDiff(today, dateKey);
-    let countClass = 'later';
-    if (diff <= 0) countClass = 'today';
-    else if (diff === 1) countClass = 'tomorrow';
-
-    const relative = getRelativeDay(dateKey);
-    const dateStr = formatDate(dateKey);
-    const words = groups[dateKey].slice(0, 3).map(c => c.word).join('、');
-    const extra = count > 3 ? `⋯等 ${count} 個` : '';
-
+  list.innerHTML = checked.map(card => {
+    const open = _expandedCheckinCards.has(card.id);
     return `
-      <div class="schedule-day">
-        <span class="schedule-date">${relative}</span>
-        <span class="schedule-count ${countClass}">${count}</span>
-        <span class="schedule-label">${dateStr} — ${words}${extra}</span>
+      <div class="checkin-today-item${open ? ' is-open' : ''}" data-id="${card.id}" role="button" tabindex="0" aria-expanded="${open}">
+        <div class="checkin-today-row">
+          <button type="button" class="library-speak-btn checkin-today-speak" title="播放發音" data-id="${card.id}">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+          </button>
+          <span class="checkin-today-word">${escapeHtml(card.word)}</span>
+          <span class="checkin-today-meaning">${escapeHtml(card.meaning || '')}</span>
+        </div>
+        ${open ? `<div class="checkin-today-detail">
+          ${card.pronunciation ? `<div class="checkin-today-pron">${escapeHtml(card.pronunciation)}</div>` : ''}
+          ${card.example ? `<div class="checkin-today-example">${escapeHtml(card.example)}</div>` : ''}
+        </div>` : ''}
       </div>`;
   }).join('');
+}
+
+function initCheckinToday() {
+  const list = $('#checkinTodayList');
+  if (!list) return;
+
+  const toggle = (item) => {
+    const id = item.dataset.id;
+    if (_expandedCheckinCards.has(id)) _expandedCheckinCards.delete(id);
+    else _expandedCheckinCards.add(id);
+    renderCheckinToday();
+  };
+
+  list.addEventListener('click', (e) => {
+    const speak = e.target.closest('.checkin-today-speak');
+    if (speak) {
+      const card = cards.find(c => c.id === speak.dataset.id);
+      if (card) playOrSpeak(card, card.word, card.lang || 'en-US', speak);
+      return;
+    }
+    const item = e.target.closest('.checkin-today-item');
+    if (item) toggle(item);
+  });
+  list.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const item = e.target.closest('.checkin-today-item');
+    if (!item || e.target.closest('button')) return;
+    e.preventDefault();
+    toggle(item);
+  });
+
+  $('#checkinPracticeBtn').addEventListener('click', () => {
+    practiceNextSession = true;
+    switchView('review');
+  });
+}
+
+// ── 複習紀錄 ──
+// ratingHistory 存符號字串而不是數字：Sheets 會把「0223」這種字串當數字吃掉開頭的 0
+const RATING_MARKS = ['✗', '△', '○', '◎']; // 忘記、困難、記得、簡單
+const RATING_HISTORY_LEN = 5;
+// 忘記這麼多次以上算頑固卡，通常是例句不好記或一張卡塞太多，要重寫或拆開。
+// 練回已熟練（level 5 以上，跟儀表板「已熟練」同標準）就不再算，頑固卡才會越清越少
+const LEECH_MIN_LAPSES = 4;
+
+// 雲端讀回來的空格子是 ''，一律轉成數字再用
+function getCardLapses(card) {
+  return Number(card.lapses) || 0;
+}
+
+function isLeechCard(card) {
+  return getCardLapses(card) >= LEECH_MIN_LAPSES && card.level < 5;
+}
+
+function getPastRelativeDay(timestamp) {
+  const d = new Date(timestamp);
+  const diff = daysDiff(new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(), getToday());
+  if (diff <= 0) return '今天';
+  if (diff === 1) return '昨天';
+  return `${diff} 天前`;
+}
+
+// 例：「忘了 4 次 · ✗△○○◎ · 3 天前」。這個功能上線前複習過的卡沒有紀錄，下次評分後才會出現
+function getReviewRecordText(card) {
+  const last = Number(card.lastReviewed) || 0;
+  if (!last) return '';
+  const lapses = getCardLapses(card);
+  return [
+    lapses ? `忘了 ${lapses} 次` : '沒忘過',
+    String(card.ratingHistory || ''),
+    getPastRelativeDay(last),
+  ].filter(Boolean).join(' · ');
+}
+
+// ── 複習範圍（儀表板勾選標籤） ──
+// 勾選的標籤只存在這台裝置，依主項目分開記；一個都沒勾＝全部卡片
+const REVIEW_TAGS_KEY = 'crystal_review_tags';
+let reviewTagsByLang = loadReviewTags();
+// 展開過的「13-01」這類組，這次開啟 App 期間都保持展開
+const _expandedReviewGroups = new Set();
+
+function loadReviewTags() {
+  try {
+    return JSON.parse(localStorage.getItem(REVIEW_TAGS_KEY)) || {};
+  } catch {
+    return {};
+  }
+}
+
+function saveReviewTags() {
+  try {
+    localStorage.setItem(REVIEW_TAGS_KEY, JSON.stringify(reviewTagsByLang));
+  } catch {}
+}
+
+function getCardTags(card) {
+  return (card.category || '').split(',').map(t => t.trim()).filter(Boolean);
+}
+
+// 頑固卡不是真的寫在 category 裡，只在複習範圍當成一個可勾的標籤。
+// 勾選存成這個 key，不會跟使用者自己取名「頑固卡」的標籤撞在一起
+const LEECH_SCOPE_KEY = '__leech__';
+
+function getScopeTags(card) {
+  const tags = getCardTags(card);
+  return isLeechCard(card) ? [...tags, LEECH_SCOPE_KEY] : tags;
+}
+
+// 勾選裡只算這個主項目現在還有的標籤：標籤被改名或刪光時，
+// 不能因為舊勾選對不到任何卡，就讓複習變成 0 張。也不主動清掉舊勾選——
+// 同步還沒完成時卡片是空的，這時清掉就把使用者的設定洗掉了
+function getEffectiveReviewTags(activeCards) {
+  const saved = reviewTagsByLang[currentLangFilter] || [];
+  if (saved.length === 0) return new Set();
+  const existing = new Set(activeCards.flatMap(getScopeTags));
+  return new Set(saved.filter(t => existing.has(t)));
+}
+
+// 複習與儀表板統計用的卡片：目前主項目裡，有任一個勾選標籤的卡
+function getReviewScopeCards() {
+  const activeCards = getCardsByLang();
+  const selected = getEffectiveReviewTags(activeCards);
+  if (selected.size === 0) return activeCards;
+  return activeCards.filter(c => getScopeTags(c).some(t => selected.has(t)));
+}
+
+function setReviewTags(tags) {
+  if (tags.length === 0) delete reviewTagsByLang[currentLangFilter];
+  else reviewTagsByLang[currentLangFilter] = [...new Set(tags)].sort();
+  saveReviewTags();
+  updateDashboard();
+}
+
+function renderReviewScope() {
+  const box = $('#reviewScopeTags');
+  if (!box) return;
+  const activeCards = getCardsByLang();
+  const selected = getEffectiveReviewTags(activeCards);
+  const today = getToday();
+
+  // 每個標籤底下的卡（組的數字要用卡片去重，一張卡可能同時有同組的兩個標籤）
+  const cardsByTag = new Map();
+  activeCards.forEach(c => getCardTags(c).forEach(t => {
+    if (!cardsByTag.has(t)) cardsByTag.set(t, new Set());
+    cardsByTag.get(t).add(c);
+  }));
+  const tags = [...cardsByTag.keys()].sort();
+
+  $('#reviewScopeClear').style.display = selected.size ? '' : 'none';
+  $('#reviewScopeSummary').textContent = tags.length === 0 && !activeCards.some(isLeechCard)
+    ? ''
+    : selected.size
+      ? `已勾選 ${selected.size} 個標籤，「複習」只會出現有這些標籤的卡片。數字為 待複習／總數。`
+      : '沒有勾選＝複習全部卡片。數字為 待複習／總數。';
+
+  const leechCards = activeCards.filter(isLeechCard);
+
+  if (tags.length === 0 && leechCards.length === 0) {
+    box.innerHTML = `<div class="empty-state small"><p>這裡的卡片還沒有分類標籤</p></div>`;
+    return;
+  }
+
+  const countHtml = cardSet => {
+    const list = [...cardSet];
+    const due = list.filter(c => c.nextReview <= today).length;
+    return `<span class="scope-chip-count">${due}<small>／${list.length}</small></span>`;
+  };
+  const chipHtml = (tag, child) => `
+    <label class="scope-chip${selected.has(tag) ? ' is-checked' : ''}${child ? ' is-child' : ''}">
+      <input type="checkbox" data-tag="${escapeHtml(tag)}"${selected.has(tag) ? ' checked' : ''}>
+      <span class="scope-chip-name">${escapeHtml(tag)}</span>${countHtml(cardsByTag.get(tag))}
+    </label>`;
+
+  // 對話編號這類「13-01、13-02…」一章就十幾個，跟知識庫的分類下拉一樣依前綴收成一組
+  const groups = new Map();
+  tags.forEach(t => {
+    const m = t.match(CATEGORY_GROUP_RE);
+    if (m) groups.set(m[1], [...(groups.get(m[1]) || []), t]);
+  });
+
+  const leechOn = selected.has(LEECH_SCOPE_KEY);
+  const leechHtml = leechCards.length === 0 ? '' : `
+    <label class="scope-chip scope-chip-leech${leechOn ? ' is-checked' : ''}" title="忘記 ${LEECH_MIN_LAPSES} 次以上的卡">
+      <input type="checkbox" data-tag="${LEECH_SCOPE_KEY}"${leechOn ? ' checked' : ''}>
+      <span class="scope-chip-name">頑固卡</span>${countHtml(new Set(leechCards))}
+    </label>`;
+
+  const rendered = new Set();
+  box.innerHTML = leechHtml + tags.map(tag => {
+    const m = tag.match(CATEGORY_GROUP_RE);
+    const members = m && groups.get(m[1]);
+    if (!members || members.length < 2) return chipHtml(tag, false);
+    if (rendered.has(m[1])) return '';
+    rendered.add(m[1]);
+    const on = members.filter(t => selected.has(t)).length;
+    const open = _expandedReviewGroups.has(m[1]);
+    const groupCards = new Set(members.flatMap(t => [...cardsByTag.get(t)]));
+    return `
+      <div class="scope-group${on ? ' is-checked' : ''}">
+        <label class="scope-chip scope-group-chip${on ? ' is-checked' : ''}">
+          <input type="checkbox" data-group="${escapeHtml(m[1])}"${on === members.length ? ' checked' : ''}${on && on < members.length ? ' data-indeterminate="1"' : ''}>
+          <span class="scope-chip-name">${escapeHtml(m[1])}-*</span>${countHtml(groupCards)}
+        </label>
+        <button type="button" class="scope-group-toggle" data-toggle="${escapeHtml(m[1])}" aria-expanded="${open}" aria-label="${open ? '收合' : '展開'} ${escapeHtml(m[1])} 組">${open ? '▾' : '▸'}</button>
+      </div>`
+      + (open ? `<div class="scope-group-members">${members.map(t => chipHtml(t, true)).join('')}</div>` : '');
+  }).join('');
+  box.querySelectorAll('[data-indeterminate]').forEach(el => { el.indeterminate = true; });
+}
+
+function initReviewScope() {
+  const box = $('#reviewScopeTags');
+  if (!box) return;
+
+  box.addEventListener('change', (e) => {
+    const input = e.target.closest('input[type="checkbox"]');
+    if (!input) return;
+    const current = [...getEffectiveReviewTags(getCardsByLang())];
+    if (input.dataset.tag !== undefined) {
+      const tag = input.dataset.tag;
+      setReviewTags(input.checked ? [...current, tag] : current.filter(t => t !== tag));
+    } else if (input.dataset.group !== undefined) {
+      // 勾組名＝整組全選，取消＝整組全不選
+      const prefix = input.dataset.group;
+      const members = [...new Set(getCardsByLang().flatMap(getCardTags))]
+        .filter(t => (t.match(CATEGORY_GROUP_RE) || [])[1] === prefix);
+      const rest = current.filter(t => !members.includes(t));
+      setReviewTags(input.checked ? [...rest, ...members] : rest);
+    }
+  });
+
+  box.addEventListener('click', (e) => {
+    const btn = e.target.closest('.scope-group-toggle');
+    if (!btn) return;
+    const prefix = btn.dataset.toggle;
+    if (_expandedReviewGroups.has(prefix)) _expandedReviewGroups.delete(prefix);
+    else _expandedReviewGroups.add(prefix);
+    renderReviewScope();
+  });
+
+  $('#reviewScopeClear').addEventListener('click', () => setReviewTags([]));
 }
 
 // ── Habit Tracker ──
@@ -4305,10 +4525,19 @@ function initReview() {
   });
 }
 
+// 練習模式：從儀表板「全部再練一次」進來，複習今日打卡的卡。
+// 只翻卡、不改 level／下次複習日／複習紀錄——同一天重複評分會讓 level 虛漲，排程就不準了
+let practiceNextSession = false;
+let isPracticeSession = false;
+
 function startReviewSession() {
   const today = getToday();
-  const activeCards = getCardsByLang();
-  reviewQueue = activeCards.filter(c => c.nextReview <= today);
+  isPracticeSession = practiceNextSession;
+  practiceNextSession = false;
+  const activeCards = getReviewScopeCards();
+  reviewQueue = isPracticeSession
+    ? getCheckinTodayCards()
+    : activeCards.filter(c => c.nextReview <= today);
   currentReviewIndex = 0;
   reviewStats = { total: reviewQueue.length, correct: 0, wrong: 0 };
 
@@ -4321,7 +4550,9 @@ function startReviewSession() {
     $('#emptyReview').style.display = 'flex';
     $('#reviewProgressText').textContent = '0 / 0';
     $('#reviewProgressFill').style.width = '0%';
-    $('#reviewSubtitle').textContent = '目前沒有待複習的卡片';
+    $('#reviewSubtitle').textContent = getEffectiveReviewTags(getCardsByLang()).size
+      ? '勾選的標籤裡目前沒有待複習的卡片'
+      : '目前沒有待複習的卡片';
     return;
   }
 
@@ -4329,7 +4560,9 @@ function startReviewSession() {
   shuffleArray(reviewQueue);
 
   $('#flashcardContainer').style.display = 'flex';
-  $('#reviewSubtitle').textContent = '翻轉卡片查看答案';
+  $('#reviewSubtitle').textContent = isPracticeSession
+    ? '練習模式：今日打卡的卡，評分不會改變 Level 和複習日'
+    : '翻轉卡片查看答案';
   showCurrentCard();
 }
 
@@ -4391,6 +4624,11 @@ function showCurrentCard() {
     $('#backTertiaryText').scrollTop = 0;
   }
 
+  const record = getReviewRecordText(card);
+  $('#cardRecordBack').textContent = record;
+  $('#cardRecordBack').style.display = record ? '' : 'none';
+  $('#cardRecordBack').classList.toggle('is-leech', isLeechCard(card));
+
   // Update schedule hints
   updateScheduleHints(card);
 
@@ -4426,6 +4664,10 @@ function showCurrentCard() {
 }
 
 function updateScheduleHints(card) {
+  if (isPracticeSession) {
+    ['#schedForgot', '#schedHard', '#schedGood', '#schedEasy'].forEach(sel => { $(sel).textContent = '練習'; });
+    return;
+  }
   // Forgot: reset to level 0
   const forgotDays = INTERVALS[0];
   $('#schedForgot').textContent = `重置 → 今天`;
@@ -4453,6 +4695,14 @@ function handleRating(rating) {
 
   const today = getToday();
 
+  if (isPracticeSession) {
+    if (rating <= 1) reviewStats.wrong++;
+    else reviewStats.correct++;
+    currentReviewIndex++;
+    setTimeout(() => showCurrentCard(), 300);
+    return;
+  }
+
   switch (rating) {
     case 0: // Forgot
       originalCard.level = 0;
@@ -4476,6 +4726,10 @@ function handleRating(rating) {
   }
 
   originalCard.reviewCount++;
+  // 複習紀錄：忘記次數、最近幾次評分、上次複習時間
+  if (rating === 0) originalCard.lapses = getCardLapses(originalCard) + 1;
+  originalCard.ratingHistory = (String(originalCard.ratingHistory || '') + RATING_MARKS[rating]).slice(-RATING_HISTORY_LEN);
+  originalCard.lastReviewed = Date.now();
   saveCardsToLocal();
 
   // Sync to Database in background
@@ -4618,11 +4872,25 @@ function initCategorySuggestions() {
   // 已聚焦時再點一下可重新展開（例如剛選完關閉後）
   input.addEventListener('click', openCategorySuggestions);
 
-  // 用 pointerdown 並擋掉預設行為，避免 input 先 blur 導致面板消失後才收到 click
+  // pointerdown 擋掉預設行為，避免 input 先 blur 導致面板消失；但真正的選取等手指放開才做：
+  // 選項把面板塞滿、沒有空白處，按下就選的話，手機上手指一碰面板就被選走，永遠捲不動
+  let tap = null;
   panel.addEventListener('pointerdown', (e) => {
-    const group = e.target.closest('.filter-suggestion-group');
+    if (!e.target.closest('.filter-suggestion-group, .filter-suggestion-item')) return;
+    e.preventDefault();
+    tap = { x: e.clientX, y: e.clientY, scroll: panel.scrollTop, target: e.target };
+  });
+  // 瀏覽器接手捲動時會送 pointercancel，這次就不算點擊
+  panel.addEventListener('pointercancel', () => { tap = null; });
+  panel.addEventListener('pointerup', (e) => {
+    const start = tap;
+    tap = null;
+    if (!start) return;
+    const moved = Math.abs(e.clientX - start.x) > 8 || Math.abs(e.clientY - start.y) > 8
+      || panel.scrollTop !== start.scroll;
+    if (moved) return;
+    const group = start.target.closest('.filter-suggestion-group');
     if (group) {
-      e.preventDefault();
       const key = group.dataset.group;
       if (_expandedCategoryGroups.has(key)) _expandedCategoryGroups.delete(key);
       else _expandedCategoryGroups.add(key);
@@ -4632,9 +4900,8 @@ function initCategorySuggestions() {
       panel.scrollTop = scroll;
       return;
     }
-    const item = e.target.closest('.filter-suggestion-item');
+    const item = start.target.closest('.filter-suggestion-item');
     if (!item) return;
-    e.preventDefault();
     input.value = item.dataset.val;
     $('#clearFilterCategory').style.display = 'flex';
     wrapper.classList.add('has-value');
@@ -4789,6 +5056,7 @@ function renderLibrary() {
         </div>
         <div class="library-card-meaning">${escapeHtml(card.meaning)}</div>
         ${card.example ? `<div class="library-card-example">${escapeHtml(card.example)}</div><button class="example-expand-btn" style="display:none" aria-expanded="false">展開 ▾</button>` : ''}
+        ${getReviewRecordText(card) ? `<div class="library-card-record${isLeechCard(card) ? ' is-leech' : ''}" title="忘記次數 · 最近評分（✗忘記 △困難 ○記得 ◎簡單）· 上次複習">${escapeHtml(getReviewRecordText(card))}</div>` : ''}
         <div class="library-card-footer">
           ${card.category ? `<span class="library-card-tag">${escapeHtml(card.category)}</span>` : '<span></span>'}
           <div style="display:flex; align-items:center; gap:0.75rem;">

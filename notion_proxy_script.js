@@ -17,6 +17,9 @@
 //    - nextReview (Number)
 //    - createdAt (Number)
 //    - reviewCount (Number)
+//    - lapses (Number)          — 複習紀錄：忘記次數
+//    - lastReviewed (Number)    — 複習紀錄：上次複習時間
+//    - ratingHistory (Text)     — 複習紀錄：最近 5 次評分
 //
 // 2. 到 Notion Integrations (https://www.notion.so/my-integrations) 建立一個新的 Integration，取得 "Internal Integration Secret" (Token)。
 // 3. 回到您的 Notion Database，點選右上角的 `...` -> `Connections` -> 搜尋並加入您剛剛建立的 Integration。
@@ -52,7 +55,10 @@ const PROPERTY_TYPES = {
     level: 'number',
     nextReview: 'number',
     createdAt: 'number',
-    reviewCount: 'number'
+    reviewCount: 'number',
+    lapses: 'number',
+    lastReviewed: 'number',
+    ratingHistory: 'rich_text'
 };
 
 // 處理 CORS Preflight 請求
@@ -551,6 +557,9 @@ function parseNotionPageToCard(page) {
     card.nextReview = getNumber('nextReview');
     card.createdAt = getNumber('createdAt');
     card.reviewCount = getNumber('reviewCount');
+    card.lapses = getNumber('lapses');
+    card.lastReviewed = getNumber('lastReviewed');
+    card.ratingHistory = getText('ratingHistory');
 
     return card;
 }
@@ -585,6 +594,9 @@ function buildNotionProperties(card) {
     props.nextReview = { number: Number(card.nextReview) || 0 };
     props.createdAt = { number: Number(card.createdAt) || 0 };
     props.reviewCount = { number: Number(card.reviewCount) || 0 };
+    props.lapses = { number: Number(card.lapses) || 0 };
+    props.lastReviewed = { number: Number(card.lastReviewed) || 0 };
+    props.ratingHistory = { rich_text: richText(card.ratingHistory || '') };
 
     return props;
 }

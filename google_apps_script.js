@@ -9,6 +9,8 @@
 //    A1: id | B1: word | C1: pronunciation | D1: meaning
 //    E1: example | F1: category | G1: lang | H1: level
 //    I1: nextReview | J1: createdAt | K1: reviewCount | L1: audioUrl
+//    複習紀錄（欄位順序不拘，接在最後即可）：lapses | lastReviewed | ratingHistory
+//    少了這三欄，雲端同步回來時複習紀錄會被清空
 // 3. 點選 Extensions → Apps Script
 // 4. 刪除預設程式碼，貼上此檔案的全部內容
 // 5. 點選 Deploy → New deployment
@@ -68,7 +70,7 @@ function doGet(e) {
                 headers.forEach((header, index) => {
                     let value = row[index];
                     // 數字欄位轉型
-                    if (['level', 'nextReview', 'createdAt', 'reviewCount'].includes(header)) {
+                    if (['level', 'nextReview', 'createdAt', 'reviewCount', 'lapses', 'lastReviewed'].includes(header)) {
                         value = Number(value) || 0;
                     }
                     card[header] = value;
