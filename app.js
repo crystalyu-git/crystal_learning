@@ -1908,6 +1908,9 @@ function renameLangCategory(oldLabel, rawName) {
 }
 
 function setLangFilter(lang) {
+  // 換主項目時清掉知識庫的分類篩選：每個主項目的標籤各不相同，
+  // 留著上一個主項目的標籤只會篩出「找不到結果」。點同一個主項目則保留
+  if (lang !== currentLangFilter) clearLibraryCategoryFilter();
   currentLangFilter = lang;
   localStorage.setItem('crystal_lang_filter', lang);
   libraryShowAll = false;
@@ -4860,6 +4863,15 @@ function closeCategorySuggestions() {
   if (!panel) return;
   panel.style.display = 'none';
   $('#filterCategory')?.setAttribute('aria-expanded', 'false');
+}
+
+function clearLibraryCategoryFilter() {
+  const input = $('#filterCategory');
+  if (!input) return;
+  input.value = '';
+  $('#clearFilterCategory').style.display = 'none';
+  input.closest('.filter-select-wrapper')?.classList.remove('has-value');
+  closeCategorySuggestions();
 }
 
 function initCategorySuggestions() {
