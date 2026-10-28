@@ -3079,11 +3079,27 @@ select.form-input {
     gap: 0.5rem;
   }
 
+  /* 頁籤變多後 9 顆按鈕會超出手機寬度：space-around 在空間不夠時等同置中，
+     兩端都被切掉，最右邊的設定就點不到。改成每顆平分寬度、縮掉左右 padding，
+     真的再塞不下（極窄螢幕）也能橫向滑動 */
   .nav-links {
     width: 100%;
-    justify-content: space-around;
+    justify-content: space-between;
+    gap: 0;
     border-top: 1px solid var(--border-subtle);
     padding-top: 0.5rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .nav-links::-webkit-scrollbar {
+    display: none;
+  }
+
+  .nav-btn {
+    flex: 1 0 auto;
+    justify-content: center;
+    padding: 0.5rem 0.35rem;
   }
 
   .nav-btn span {

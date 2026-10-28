@@ -5543,6 +5543,27 @@ function initSettings() {
     showToast('已套用「溫柔紫」配色');
   });
 
+  $('#presetEarthBlue')?.addEventListener('click', () => {
+    const preset = { bgPrimary: '#56626A', accentPrimary: '#DDB08A',
+      textSecondary: '#cccccc', textMuted: '#bbbbbb' };
+    applyTheme(preset); saveTheme(preset);
+    showToast('已套用「質感藍」配色');
+  });
+
+  $('#presetEarthBrown')?.addEventListener('click', () => {
+    const preset = { bgPrimary: '#6A5D56', accentPrimary: '#98BAB4',
+      textSecondary: '#cccccc', textMuted: '#bbbbbb' };
+    applyTheme(preset); saveTheme(preset);
+    showToast('已套用「質感棕」配色');
+  });
+
+  $('#presetEarthPurple')?.addEventListener('click', () => {
+    const preset = { bgPrimary: '#64566A', accentPrimary: '#A8BA92',
+      textSecondary: '#cccccc', textMuted: '#bbbbbb' };
+    applyTheme(preset); saveTheme(preset);
+    showToast('已套用「質感紫」配色');
+  });
+
   // Theme Reset
   $('#resetThemeBtn').addEventListener('click', () => {
     localStorage.removeItem('crystal_learning_theme');
