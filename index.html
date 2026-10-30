@@ -32,7 +32,7 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;700&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=2.14">
+    <link rel="stylesheet" href="styles.css?v=2.15">
     <!-- 主題早期初始化：防止 Safari 快取舊 app.js 導致閃白 -->
     <script>
     (function() {
@@ -1102,6 +1102,18 @@
                         <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:linear-gradient(135deg,#6A5656,#9DB3C6);flex-shrink:0;"></span>
                         質感紅
                     </button>
+                    <button type="button" class="theme-preset-btn" id="presetEarthMustard"
+                        title="質感黃：芥末卡其灰底 + 霧薰衣草強調色"
+                        style="display:flex;align-items:center;gap:0.4rem;padding:0.35rem 0.75rem;border-radius:999px;border:1px solid var(--border-light);background:var(--bg-glass);color:var(--text-primary);font-size:0.8rem;cursor:pointer;">
+                        <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:linear-gradient(135deg,#6A6556,#BAAED2);flex-shrink:0;"></span>
+                        質感黃
+                    </button>
+                    <button type="button" class="theme-preset-btn" id="presetEarthIndigo"
+                        title="質感靛：靛藍灰底 + 麥穗金強調色"
+                        style="display:flex;align-items:center;gap:0.4rem;padding:0.35rem 0.75rem;border-radius:999px;border:1px solid var(--border-light);background:var(--bg-glass);color:var(--text-primary);font-size:0.8rem;cursor:pointer;">
+                        <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:linear-gradient(135deg,#565A6A,#C6B07E);flex-shrink:0;"></span>
+                        質感靛
+                    </button>
                 </div>
                 <div class="color-picker-group"
                     style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem;">
@@ -1338,8 +1350,8 @@
     <!-- wanakana 改為本地檔案：原本從 unpkg 載，第三方 CDN 或該套件被接管就能在本站
          同源執行任意程式碼、直接讀走 localStorage 裡的資料。tesseract.js 全專案 0 次
          呼叫（OCR 走後端 Google Vision），一併移除 -->
-    <script src="vendor/wanakana-5.3.1.min.js?v=2.14"></script>
-    <script src="app.js?v=2.14"></script>
+    <script src="vendor/wanakana-5.3.1.min.js?v=2.15"></script>
+    <script src="app.js?v=2.15"></script>
 
     <!-- OCR Result Overlay -->
     <div id="ocrOverlay"
