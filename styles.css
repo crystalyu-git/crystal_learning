@@ -218,6 +218,8 @@ body {
   font-weight: 700;
   color: var(--accent-primary);
   letter-spacing: -0.02em;
+  /* 窄螢幕換成兩行時，兩行合計 40px 與 brand-icon 同高 */
+  line-height: 20px;
 }
 
 .nav-links {
