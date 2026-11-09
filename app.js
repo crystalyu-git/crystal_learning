@@ -43,6 +43,10 @@ let langAliases = loadLangAliases();
 // 主項目排序：存卡片實際的 lang 值（不是顯示名稱），這樣改名不會把排序打散。
 // 不在表裡的項目排在後面、照字母序，跟改版前的行為一致
 let langOrder = loadLangOrder();
+// 標籤的預設音源：{ 標籤名稱: 'pron' | 'custom' }，沒列的標籤＝自動。
+// 卡片同時有「發音／拼音」欄的連結與自訂音源時，靠它決定喇叭播哪個；
+// 只認標籤名稱、不分主項目，跟著 __crystal_habits__ 那張隱藏卡片跨裝置同步
+let tagAudioSource = loadTagAudioSource();
 
 // 在日天數：每年度 9/1～隔年 8/31 在日本的天數有沒有超過 270 天。
 // 行程只存使用者自己的裝置與雲端，不寫進原始碼（這個 repo 是公開的）
@@ -767,8 +771,10 @@ async function syncFromNotion() {
             cardChecks = notionData.cardChecks || {};
             langAliases = notionData.langAliases || {};
             langOrder = Array.isArray(notionData.langOrder) ? notionData.langOrder : [];
+            tagAudioSource = notionData.tagAudioSource || {};
             saveLangAliases();
             saveLangOrder();
+            saveTagAudioSource();
             refreshLangSelectLabels();
             saveHabitsToLocal();
             saveHabitChecksToLocal();
@@ -1024,7 +1030,7 @@ function pushHabitsToNotion() {
     const habitsCard = {
       id: HABITS_CARD_ID,
       word: '__habits__',
-      meaning: JSON.stringify({ habits, habitChecks, cardChecks, langAliases, langOrder, ...stayCloudFields() }),
+      meaning: JSON.stringify({ habits, habitChecks, cardChecks, langAliases, langOrder, tagAudioSource, ...stayCloudFields() }),
       example: localStorage.getItem('crystal_habit_updated_at') || String(Date.now()),
       pronunciation: '', category: '', audioUrl: '', lang: '',
       level: 0, nextReview: 0, createdAt: Date.now(), reviewCount: 0,
@@ -1442,7 +1448,7 @@ async function rotateBeliefPassphrase(oldPass, newPass, onProgress = () => {}) {
       } catch (e) {
         data = null;
       }
-      if (!data) data = { habits, habitChecks, cardChecks, langAliases, langOrder };
+      if (!data) data = { habits, habitChecks, cardChecks, langAliases, langOrder, tagAudioSource };
       const habitsCard = {
         id: HABITS_CARD_ID,
         word: '__habits__',
@@ -1822,6 +1828,19 @@ function loadLangOrder() {
 
 function saveLangOrder() {
   localStorage.setItem('crystal_lang_order', JSON.stringify(langOrder));
+}
+
+function loadTagAudioSource() {
+  try {
+    const v = JSON.parse(localStorage.getItem('crystal_tag_audio_source') || '{}');
+    return v && typeof v === 'object' && !Array.isArray(v) ? v : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function saveTagAudioSource() {
+  localStorage.setItem('crystal_tag_audio_source', JSON.stringify(tagAudioSource));
 }
 
 function getLangLabel(lang) {
@@ -3157,7 +3176,8 @@ function applyEllipsisTitles(scope) {
   if (!scope) return;
   scope.querySelectorAll('.habit-name-text').forEach(el => {
     if (el.clientWidth === 0) return;                    // 隱藏，維持模板 title 不動
-    if (el.scrollWidth > el.clientWidth + 1) {
+    // 名稱最多兩行，被截的是高度（第三行以後），寬度只在極長無斷點字串時才會溢出
+    if (el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1) {
       el.setAttribute('title', el.textContent);          // 截斷：確保 title 為完整內容
     } else {
       el.removeAttribute('title');                       // 未截斷：短名稱不需 tooltip
@@ -4511,6 +4531,17 @@ function initReview() {
     }
   });
 
+  // 複習卡上的「▶ 發音連結」：只播發音欄的連結，也不要翻面
+  ['#frontSecondaryText', '#backSecondaryText'].forEach(sel => {
+    $(sel).addEventListener('click', (e) => {
+      const btn = e.target.closest('.pron-link-btn');
+      if (!btn) return;
+      e.stopPropagation();
+      const card = reviewQueue[currentReviewIndex];
+      if (card) playOrSpeak(card, card.word, card.lang || 'en-US', btn, getPronunciationUrl(card));
+    });
+  });
+
   // Handle Review Mode switch mid-review
   $('#reviewModeSelect').addEventListener('change', () => {
     if ($('#reviewView').classList.contains('active') && reviewQueue.length > 0 && currentReviewIndex < reviewQueue.length) {
@@ -4598,7 +4629,7 @@ function showCurrentCard() {
     // Front shows the Word
     $('#frontPrimaryText').className = 'card-word';
     $('#frontPrimaryText').textContent = card.word;
-    $('#frontSecondaryText').textContent = card.pronunciation || '';
+    setPronunciationText($('#frontSecondaryText'), card);
     $('#frontSecondaryText').style.display = card.pronunciation ? 'block' : 'none';
 
     // Back shows Meaning and Example
@@ -4619,7 +4650,7 @@ function showCurrentCard() {
     $('#backPrimaryText').className = 'card-word';
     $('#backPrimaryText').textContent = card.word;
 
-    $('#backSecondaryText').textContent = card.pronunciation || '';
+    setPronunciationText($('#backSecondaryText'), card);
     $('#backSecondaryText').style.display = card.pronunciation ? 'block' : 'none';
 
     $('#backTertiaryText').textContent = card.example || '';
@@ -4969,9 +5000,65 @@ function initLibrary() {
     openCategorySuggestions();
   });
   initCategorySuggestions();
+  initTagAudioBar();
   $('#libraryShowAllBtn').addEventListener('click', () => {
     libraryShowAll = true;
     renderLibrary();
+  });
+}
+
+// 發音欄是網址時顯示成播放鈕，不把整串網址當拼音印出來
+function setPronunciationText(el, card) {
+  if (getPronunciationUrl(card)) el.innerHTML = pronLinkButtonHtml(card);
+  else el.textContent = card.pronunciation || '';
+}
+
+const TAG_AUDIO_OPTIONS = [
+  { v: 'auto', label: '自動', hint: '有自訂音源就播自訂音源，沒有才播發音／拼音欄的連結' },
+  { v: 'pron', label: '發音／拼音', hint: '播發音／拼音欄的連結（這張卡沒有就照自動）' },
+  { v: 'custom', label: '自訂音源', hint: '播自訂音源（這張卡沒有就照自動）' },
+];
+
+// 分類篩選剛好等於某個標籤、而且這個標籤底下有卡片的發音欄放連結時，才出現音源切換
+function renderTagAudioBar(activeCards, filterCat) {
+  const bar = $('#tagAudioBar');
+  if (!bar) return;
+  const q = String(filterCat || '').trim().toLowerCase();
+  const tag = q ? [...new Set(activeCards.flatMap(getCardTags))].find(t => t.toLowerCase() === q) : null;
+  const show = tag && (tagAudioSource[tag]
+    || activeCards.some(c => getCardTags(c).includes(tag) && getPronunciationUrl(c)));
+  if (!show) {
+    bar.style.display = 'none';
+    bar.innerHTML = '';
+    delete bar.dataset.tag;
+    return;
+  }
+  const cur = tagAudioSource[tag] || 'auto';
+  bar.dataset.tag = tag;
+  bar.innerHTML = `
+    <span class="tag-audio-label">「${escapeHtml(tag)}」的卡片播放</span>
+    <div class="tag-audio-seg" role="group" aria-label="${escapeHtml(tag)} 的預設音源">
+      ${TAG_AUDIO_OPTIONS.map(o => `<button type="button" data-v="${o.v}" title="${o.hint}" aria-pressed="${o.v === cur}">${o.label}</button>`).join('')}
+    </div>`;
+  bar.style.display = 'flex';
+}
+
+function initTagAudioBar() {
+  const bar = $('#tagAudioBar');
+  if (!bar) return;
+  bar.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-v]');
+    const tag = bar.dataset.tag;
+    if (!btn || !tag) return;
+    const v = btn.dataset.v;
+    if ((tagAudioSource[tag] || 'auto') === v) return;
+    if (v === 'auto') delete tagAudioSource[tag];
+    else tagAudioSource[tag] = v;
+    saveTagAudioSource();
+    markHabitsUpdated();
+    renderLibrary();
+    const label = TAG_AUDIO_OPTIONS.find(o => o.v === v).label;
+    showToast(`「${tag}」的卡片改成播放：${label}`);
   });
 }
 
@@ -4985,6 +5072,7 @@ function renderLibrary() {
 
   // Update category filter
   updateCategoryFilter(activeCards);
+  renderTagAudioBar(activeCards, filterCat);
 
   // Filter cards
   let filtered = [...activeCards];
@@ -5046,17 +5134,24 @@ function renderLibrary() {
     const levelClass = `level-${Math.min(card.level, 6)}`;
     const levelText = levelNames[Math.min(card.level, 6)];
     const nextReview = getRelativeDay(card.nextReview);
+    // 兩個音源都有時，喇叭旁標出現在會播哪一個
+    const resolvedUrl = resolveCardAudioUrl(card);
+    const speakSrc = card.audioUrl && getPronunciationUrl(card)
+      ? (resolvedUrl === getPronunciationUrl(card) ? '發音' : '自訂')
+      : '';
 
     return `
       <div class="library-card ${levelClass}" data-id="${card.id}">
         <div class="library-card-header">
           <div class="library-card-title">
             <div class="library-card-word">${escapeHtml(card.word)}</div>
-            ${card.pronunciation ? `<div class="library-card-pronunciation">${escapeHtml(card.pronunciation)}</div>` : ''}
+            ${getPronunciationUrl(card)
+              ? pronLinkButtonHtml(card)
+              : card.pronunciation ? `<div class="library-card-pronunciation">${escapeHtml(card.pronunciation)}</div>` : ''}
           </div>
           <div class="library-card-actions">
-            <button class="library-speak-btn" title="播放發音" data-word="${escapeHtml(card.word)}" data-lang="${card.lang || 'en-US'}" data-audio-url="${escapeHtml(card.audioUrl || '')}">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+            <button class="library-speak-btn${speakSrc ? ' has-src' : ''}" title="播放發音" data-id="${escapeHtml(card.id)}">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>${speakSrc ? `<span class="speak-src">${speakSrc}</span>` : ''}
             </button>
             <button class="card-action-btn edit" title="編輯" data-id="${card.id}">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
@@ -5113,7 +5208,16 @@ function renderLibrary() {
   grid.querySelectorAll('.library-speak-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      playOrSpeak({ audioUrl: btn.dataset.audioUrl }, btn.dataset.word, btn.dataset.lang, btn);
+      const card = cards.find(c => c.id === btn.dataset.id);
+      if (card) playOrSpeak(card, card.word, card.lang || 'en-US', btn);
+    });
+  });
+
+  grid.querySelectorAll('.pron-link-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const card = cards.find(c => c.id === btn.dataset.id);
+      if (card) playOrSpeak(card, card.word, card.lang || 'en-US', btn, getPronunciationUrl(card));
     });
   });
 
@@ -5854,45 +5958,87 @@ function unlockMediaPlayback() {
 document.addEventListener('touchend', unlockMediaPlayback, true);
 document.addEventListener('click', unlockMediaPlayback, true);
 
-function playOrSpeak(card, defaultText, lang, btnElement) {
+// ── 播放來源：發音／拼音欄的連結 vs 自訂音源 ──
+// 發音／拼音欄整格就是一個網址時，才把它當成音源
+function getPronunciationUrl(card) {
+  const s = String(card?.pronunciation || '').trim();
+  return /^https?:\/\/\S+$/i.test(s) ? s : '';
+}
+
+// 卡片有多個標籤、設定又不同時，取第一個有設定的標籤
+function getCardAudioPreference(card) {
+  for (const tag of getCardTags(card || {})) {
+    const v = tagAudioSource[tag];
+    if (v === 'pron' || v === 'custom') return v;
+  }
+  return 'auto';
+}
+
+// 照標籤設定挑；指定的那個來源這張卡沒有，就退回自動（自訂音源優先，其次發音欄的連結）
+function resolveCardAudioUrl(card) {
+  const custom = String(card?.audioUrl || '').trim();
+  const pron = getPronunciationUrl(card);
+  const pref = getCardAudioPreference(card);
+  if (pref === 'pron' && pron) return pron;
+  if (pref === 'custom' && custom) return custom;
+  return custom || pron;
+}
+
+function getAudioSourceLabel(url) {
+  if (isGoogleDriveUrl(url)) return 'Drive';
+  if (extractYouTubeId(url)) return 'YouTube';
+  if (isDirectAudioFile(url)) return '音檔';
+  return '連結';
+}
+
+function pronLinkButtonHtml(card) {
+  const url = getPronunciationUrl(card);
+  return `<button type="button" class="pron-link-btn" data-id="${escapeHtml(card.id)}" title="${escapeHtml(url)}">
+    <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20"/></svg>發音連結 · ${getAudioSourceLabel(url)}
+  </button>`;
+}
+
+function playOrSpeak(card, defaultText, lang, btnElement, overrideUrl) {
   const langCode = getLangCode(lang);
-  if (card.audioUrl) {
+  // overrideUrl：卡片上的「▶ 發音連結」直接指定播哪個，不看標籤設定
+  const audioUrl = overrideUrl || resolveCardAudioUrl(card);
+  if (audioUrl) {
     // 音檔跟系統發音是兩套播放器，不主動停掉對方就會疊在一起
     playbackGen++;
     stopSpeechPlayback();
     // 上一個音檔的按鈕動畫也要收掉：換來源時 onended 會被清掉，不收就會一直閃
     stopAudioPlayback();
 
-    const isDriveUrl = isGoogleDriveUrl(card.audioUrl);
-    const ytId = extractYouTubeId(card.audioUrl);
+    const isDriveUrl = isGoogleDriveUrl(audioUrl);
+    const ytId = extractYouTubeId(audioUrl);
 
     // 這張卡指定了直接開分頁：不要再試 app 內播放，那正是使用者不想等的東西
-    if (isNewTabAudio(card.audioUrl)) {
-      window.open(withAudioStart(card.audioUrl, getAudioStartSeconds(card.audioUrl) || 0), '_blank');
+    if (isNewTabAudio(audioUrl)) {
+      window.open(withAudioStart(audioUrl, getAudioStartSeconds(audioUrl) || 0), '_blank');
       return;
     }
 
     if (isDriveUrl) {
-      playGoogleDriveAudio(card.audioUrl, btnElement, () => {
+      playGoogleDriveAudio(audioUrl, btnElement, () => {
         if (langCode) speakText(defaultText, langCode, btnElement);
       });
       return;
     }
 
     if (ytId) {
-      window.open(card.audioUrl, '_blank');
+      window.open(audioUrl, '_blank');
       return;
     }
 
-    if (isDirectAudioFile(card.audioUrl)) {
-      playDirectAudio(card.audioUrl, btnElement, () => {
+    if (isDirectAudioFile(audioUrl)) {
+      playDirectAudio(audioUrl, btnElement, () => {
         if (langCode) speakText(defaultText, langCode, btnElement);
       });
       return;
     }
 
     // Default fallback: open any unstructured link in a new tab
-    window.open(card.audioUrl, '_blank');
+    window.open(audioUrl, '_blank');
   } else {
     if (langCode) speakText(defaultText, langCode, btnElement);
   }
