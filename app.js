@@ -2981,15 +2981,17 @@ function startHabitRename(id, spanEl) {
 document.addEventListener('click', (e) => {
   const el = e.target.closest('.habit-name-text');
   if (!el) return;
-  const expanded = el.classList.contains('is-expanded');
-  if (!expanded && el.scrollWidth <= el.clientWidth + 1) return; // 沒被截斷，不用展開
-  el.classList.toggle('is-expanded', !expanded);
+  // 不先量「有沒有被截斷」：只差不到 1px 時 scrollWidth 會四捨五入成跟 clientWidth 一樣，
+  // 畫面上明明是「Engli…」卻判成沒截斷而點不開；而且展開一列會讓整欄變窄、別列才開始被截。
+  // 沒被截斷的名稱切換 is-expanded 畫面不會有任何變化，直接切就好
+  const expanded = el.classList.toggle('is-expanded');
   const id = el.dataset.habitId;
   if (id) {
-    if (expanded) expandedHabitNames.delete(id);
-    else expandedHabitNames.add(id);
+    if (expanded) expandedHabitNames.add(id);
+    else expandedHabitNames.delete(id);
   }
-  if (expanded) applyEllipsisTitles(el.parentElement);
+  // 欄寬可能跟著變，整張表的 tooltip 重新判斷
+  applyEllipsisTitles(el.closest('tbody') || el.parentElement);
 });
 
 function toggleHabitCheck(habitId, dateKey) {
@@ -3196,10 +3198,8 @@ function applyEllipsisTitles(scope) {
     if (el.classList.contains('is-expanded')) return;    // 已展開量不出是否截斷，維持原狀
     if (el.scrollWidth > el.clientWidth + 1) {
       el.setAttribute('title', el.textContent);          // 截斷：確保 title 為完整內容
-      el.classList.add('is-truncated');                  // 可點擊展開
     } else {
       el.removeAttribute('title');                       // 未截斷：短名稱不需 tooltip
-      el.classList.remove('is-truncated');
     }
   });
 }

@@ -2157,12 +2157,8 @@ select.form-input {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  cursor: text;
-}
-
-/* 名稱被截斷時可以點，點一下展開完整名稱（再點收合）；手機沒有 hover，只能靠這個看全名 */
-.habit-name-text.is-truncated,
-.habit-name-text.is-expanded {
+  /* 點一下展開完整名稱（再點收合）；手機沒有 hover，只能靠這個看全名。
+     cursor: pointer 也讓 iOS Safari 把這個 span 當成可點擊元素，確保 click 一定送得出來 */
   cursor: pointer;
 }
 
