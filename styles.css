@@ -2024,7 +2024,7 @@ select.form-input {
   text-overflow: ellipsis;
 }
 
-/* 內容列的名稱交給 .habit-name-text 兩行截斷，td 本身不能 nowrap，否則子元素也被強制單行 */
+/* 內容列的名稱要能展開換行，td 本身不能 nowrap，否則子元素也被強制單行 */
 #habitTrackerBody .habit-name-col {
   white-space: normal;
 }
@@ -2154,16 +2154,23 @@ select.form-input {
 .habit-name-text {
   flex: 1 1 auto;
   min-width: 0;
-  /* 長名稱最多折成兩行，超過才顯示…；電腦／手機都不用 hover 就看得到 */
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: text;
+}
+
+/* 名稱被截斷時可以點，點一下展開完整名稱（再點收合）；手機沒有 hover，只能靠這個看全名 */
+.habit-name-text.is-truncated,
+.habit-name-text.is-expanded {
+  cursor: pointer;
+}
+
+.habit-name-text.is-expanded {
   white-space: normal;
   overflow-wrap: anywhere;
+  text-overflow: clip;
   line-height: 1.3;
-  cursor: text;
 }
 
 .habit-name-actions {

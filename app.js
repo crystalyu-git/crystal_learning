@@ -28,6 +28,8 @@ let habits = []; // [{ id, name, createdAt }]
 let habitChecks = {}; // { [habitId]: { "YYYY-MM-DD": true } }
 let cardChecks = {}; // { [cardId]: { "YYYY-MM-DD": true } } — 知識庫卡片每日打卡紀錄
 let habitScrollInitialized = false;
+// 點擊展開完整名稱的習慣 id；打卡等重繪後維持展開狀態（只存記憶體，重新整理就收回）
+const expandedHabitNames = new Set();
 const HABIT_MAX_MONTHS_BACK = 11; // 打卡表最多回溯 11 個月，避免表格無限成長
 
 // 集合A／非A 日記：內容一律加密後才落地，beliefs 是解密後的明文，只存在記憶體
@@ -2975,6 +2977,21 @@ function startHabitRename(id, spanEl) {
   input.addEventListener('blur', () => commit(true));
 }
 
+// 名稱被截斷時點一下展開完整名稱、再點收合；習慣追蹤表與單卡打卡紀錄共用
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('.habit-name-text');
+  if (!el) return;
+  const expanded = el.classList.contains('is-expanded');
+  if (!expanded && el.scrollWidth <= el.clientWidth + 1) return; // 沒被截斷，不用展開
+  el.classList.toggle('is-expanded', !expanded);
+  const id = el.dataset.habitId;
+  if (id) {
+    if (expanded) expandedHabitNames.delete(id);
+    else expandedHabitNames.add(id);
+  }
+  if (expanded) applyEllipsisTitles(el.parentElement);
+});
+
 function toggleHabitCheck(habitId, dateKey) {
   if (!habitChecks[habitId]) habitChecks[habitId] = {};
   if (habitChecks[habitId][dateKey]) delete habitChecks[habitId][dateKey];
@@ -3176,11 +3193,13 @@ function applyEllipsisTitles(scope) {
   if (!scope) return;
   scope.querySelectorAll('.habit-name-text').forEach(el => {
     if (el.clientWidth === 0) return;                    // 隱藏，維持模板 title 不動
-    // 名稱最多兩行，被截的是高度（第三行以後），寬度只在極長無斷點字串時才會溢出
-    if (el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1) {
+    if (el.classList.contains('is-expanded')) return;    // 已展開量不出是否截斷，維持原狀
+    if (el.scrollWidth > el.clientWidth + 1) {
       el.setAttribute('title', el.textContent);          // 截斷：確保 title 為完整內容
+      el.classList.add('is-truncated');                  // 可點擊展開
     } else {
       el.removeAttribute('title');                       // 未截斷：短名稱不需 tooltip
+      el.classList.remove('is-truncated');
     }
   });
 }
@@ -3226,7 +3245,7 @@ function renderHabitTracker({ anchorToday = false } = {}) {
     return `<tr data-habit-id="${h.id}">
       <td class="habit-name-col">
         <div class="habit-name-cell">
-          <span class="habit-name-text" data-habit-id="${h.id}" title="${escapeHtml(h.name)}">${escapeHtml(h.name)}</span>
+          <span class="habit-name-text${expandedHabitNames.has(h.id) ? ' is-expanded' : ''}" data-habit-id="${h.id}" title="${escapeHtml(h.name)}">${escapeHtml(h.name)}</span>
           <div class="habit-name-actions">
             <button type="button" class="habit-edit-btn" data-habit-id="${h.id}" title="編輯名稱">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
@@ -3909,7 +3928,7 @@ function initHabitTracker() {
       toggleHabitCheck(checkCell.dataset.habitId, checkCell.dataset.date);
     }
   });
-  // 雙擊名稱也可編輯
+  // 雙擊名稱也可編輯（雙擊會先觸發兩次 click，展開／收合剛好抵銷）
   body.addEventListener('dblclick', (e) => {
     const nameEl = e.target.closest('.habit-name-text');
     if (nameEl) startHabitRename(nameEl.dataset.habitId, nameEl);
